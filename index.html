@@ -208,7 +208,7 @@ function refreshAuthUI(){
       for (const id in e.layers._layers){
         const layer = e.layers._layers[id];
         const f = layer.feature, ll = layer.getLatLng();
-        const { error } = await supabase.from('api.beneficiaires_rw')
+        const { error } = await supabase.from('beneficiaires_rw')
           .update({ lat: ll.lat, lon: ll.lng })
           .eq('id_beneficiaire', f.properties.id_beneficiaire);
         if (error) alert(error.message);
@@ -241,9 +241,9 @@ const filterSet = new Set();
 let cacheInterv = [], cacheBenef = [];
 
 async function loadData(){
-  const resI = await supabase.from('api.vw_intervenantes_points').select('*');
+  const resI = await supabase.from('vw_intervenantes_points').select('*');
   if (resI.error) { alert(resI.error.message); return; }
-  const resB = await supabase.from('api.vw_beneficiaires_enriched').select('*');
+  const resB = await supabase.from('vw_beneficiaires_enriched').select('*');
   if (resB.error) { alert(resB.error.message); return; }
   cacheInterv = resI.data||[];
   cacheBenef  = resB.data||[];
@@ -299,21 +299,21 @@ function renderBenef(rows){
             $('btnSave').onclick = async ()=>{
               const addr = $('f_addr').value.trim();
               const ids  = $('f_ints').value.split(',').map(s=>s.trim()).filter(Boolean);
-              await supabase.from('api.lien_rw').delete().eq('id_beneficiaire', p.id_beneficiaire);
+              await supabase.from('lien_rw').delete().eq('id_beneficiaire', p.id_beneficiaire);
               if (ids.length){
                 const rows = ids.map((id,i)=>({ id_beneficiaire:p.id_beneficiaire, id_intervenante:id, is_primary:i===0 }));
-                const ins = await supabase.from('api.lien_rw').insert(rows);
+                const ins = await supabase.from('lien_rw').insert(rows);
                 if (ins.error) { alert(ins.error.message); return; }
               }
-              const up = await supabase.from('api.beneficiaires_rw').update({ adresse_beneficiaire: addr }).eq('id_beneficiaire', p.id_beneficiaire);
+              const up = await supabase.from('beneficiaires_rw').update({ adresse_beneficiaire: addr }).eq('id_beneficiaire', p.id_beneficiaire);
               if (up.error) alert(up.error.message);
               await loadData();
             };
             $('btnPrim').onclick = async ()=>{
               const ids = $('f_ints').value.split(',').map(s=>s.trim()).filter(Boolean);
               if (!ids.length) return;
-              await supabase.from('api.lien_rw').update({ is_primary:false }).eq('id_beneficiaire', p.id_beneficiaire);
-              const set = await supabase.from('api.lien_rw').update({ is_primary:true })
+              await supabase.from('lien_rw').update({ is_primary:false }).eq('id_beneficiaire', p.id_beneficiaire);
+              const set = await supabase.from('lien_rw').update({ is_primary:true })
                 .eq('id_beneficiaire', p.id_beneficiaire).eq('id_intervenante', ids[0]);
               if (set.error) alert(set.error.message);
               await loadData();
@@ -356,7 +356,7 @@ function populateSelects(){
 document.getElementById('btnSecteurs').onclick = async ()=>{
   if (!canView()) return alert('Connectez-vous.');
   hullLayer.clearLayers();
-  const q = await supabase.from('api.vw_secteurs_concaves_geojson').select('id_intervenante, geojson');
+  const q = await supabase.from('vw_secteurs_concaves_geojson').select('id_intervenante, geojson');
   if (q.error) { alert(q.error.message); return; }
   (q.data||[]).forEach(r => L.geoJSON(r.geojson, { style:{ color: colorFor(r.id_intervenante), weight:2, fillOpacity:.15 }}).addTo(hullLayer));
   if (!map.hasLayer(hullLayer)) { document.getElementById('lm_hull').checked = true; hullLayer.addTo(map); }
@@ -401,14 +401,14 @@ document.getElementById('ci_save').onclick = async ()=>{
   const payload = { id_intervenante:id, nom, adresse_intervenante:addr, lat:ci_lat, lon:ci_lon, color };
 
   // 1) Tenter INSERT
-  let ins = await supabase.from('api.intervenantes_rw').insert([payload]).select();
+  let ins = await supabase.from('intervenantes_rw').insert([payload]).select();
   if (ins.error) {
     // 2) Si doublon (clé existante) => faire UPDATE
     // (code Postgres usuels pour doublon: 23505 ; selon PostgREST, error.code peut être absent, on teste aussi le message)
     const isDup = ins.error.code === '23505' || /duplicate key|already exists/i.test(ins.error.message || '');
     if (!isDup) { alert(ins.error.message); return; }
 
-    const upd = await supabase.from('api.intervenantes_rw').update(payload).eq('id_intervenante', id).select();
+    const upd = await supabase.from('intervenantes_rw').update(payload).eq('id_intervenante', id).select();
     if (upd.error) { alert(upd.error.message); return; }
   }
 
@@ -422,8 +422,8 @@ document.getElementById('ci_link').onclick = async ()=>{
   const id = document.getElementById('ci_id').value.trim();
   const b  = document.getElementById('ci_benef_select').value;
   if (!id || !b) return;
-  await supabase.from('api.lien_rw').delete().eq('id_beneficiaire', b).eq('id_intervenante', id);
-  const ins = await supabase.from('api.lien_rw').insert([{ id_beneficiaire:b, id_intervenante:id, is_primary:true }]);
+  await supabase.from('lien_rw').delete().eq('id_beneficiaire', b).eq('id_intervenante', id);
+  const ins = await supabase.from('lien_rw').insert([{ id_beneficiaire:b, id_intervenante:id, is_primary:true }]);
   if (ins.error) { alert(ins.error.message); return; }
   alert('Lien créé (primaire).'); await loadData();
 };
@@ -436,9 +436,9 @@ document.getElementById('cb_create_and_link').onclick = async ()=>{
   if (!idI || !idB) return alert('ID intervenante + ID bénéficiaire requis.');
   const hits = await geocodeBAN(addr);
   const lat = hits[0]?.lat ?? null, lon = hits[0]?.lon ?? null;
-  const insB = await supabase.from('api.beneficiaires_rw').insert([{ id_beneficiaire:idB, nom:nomB, adresse_beneficiaire:addr, lat, lon }]).select();
+  const insB = await supabase.from('beneficiaires_rw').insert([{ id_beneficiaire:idB, nom:nomB, adresse_beneficiaire:addr, lat, lon }]).select();
   if (insB.error) { alert(insB.error.message); return; }
-  await supabase.from('api.lien_rw').insert([{ id_beneficiaire:idB, id_intervenante:idI, is_primary:true }]);
+  await supabase.from('lien_rw').insert([{ id_beneficiaire:idB, id_intervenante:idI, is_primary:true }]);
   alert('Bénéficiaire créé & lié.'); await loadData();
 };
 
@@ -462,9 +462,9 @@ document.getElementById('cb_save').onclick = async ()=>{
     const hits = await geocodeBAN(addr);
     if (hits[0]) { cb_lat=hits[0].lat; cb_lon=hits[0].lon; }
   }
-  const ins = await supabase.from('api.beneficiaires_rw').insert([{ id_beneficiaire:idB, nom, adresse_beneficiaire:addr, lat:cb_lat, lon:cb_lon }]).select();
+  const ins = await supabase.from('beneficiaires_rw').insert([{ id_beneficiaire:idB, nom, adresse_beneficiaire:addr, lat:cb_lat, lon:cb_lon }]).select();
   if (ins.error) { alert(ins.error.message); return; }
-  if (idI) await supabase.from('api.lien_rw').insert([{ id_beneficiaire:idB, id_intervenante:idI, is_primary:true }]);
+  if (idI) await supabase.from('lien_rw').insert([{ id_beneficiaire:idB, id_intervenante:idI, is_primary:true }]);
   cb_lat=cb_lon=null; alert('Bénéficiaire créé.'); await loadData();
 };
 
@@ -491,10 +491,10 @@ document.getElementById('ln_save').onclick = async ()=>{
   const checks = Array.from(document.querySelectorAll('#ln_interv_list input[type=checkbox]'));
   const selected = checks.filter(c=>c.checked).map(c=>c.value);
   const primary = (document.querySelector('#ln_interv_list input[name=ln_primary]:checked')||{}).value || null;
-  await supabase.from('api.lien_rw').delete().eq('id_beneficiaire', bId);
+  await supabase.from('lien_rw').delete().eq('id_beneficiaire', bId);
   if (selected.length){
     const rows = selected.map((id,i)=>({ id_beneficiaire:bId, id_intervenante:id, is_primary: (primary? id===primary : i===0) }));
-    const ins = await supabase.from('api.lien_rw').insert(rows);
+    const ins = await supabase.from('lien_rw').insert(rows);
     if (ins.error) { alert(ins.error.message); return; }
   }
   await loadData();
