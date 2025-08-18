@@ -10,31 +10,31 @@
     href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <style>
     html,body,#map{height:100%;margin:0}
-    .panel{position:absolute;top:10px;left:10px;z-index:1000;background:#fff;padding:10px;border-radius:8px;max-width:360px;box-shadow:0 2px 12px rgba(0,0,0,.15);font:14px system-ui}
+    .panel{position:absolute;top:10px;left:10px;z-index:1000;background:#fff;padding:10px;border-radius:8px;max-width:340px;box-shadow:0 2px 12px rgba(0,0,0,.15);font:14px system-ui}
     .btn{padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#f7f7f7;cursor:pointer}
     .btn + .btn { margin-left:6px }
     .row{margin:6px 0}
-    .muted{color:#666}
   </style>
 </head>
 <body>
 <div class="panel">
   <div class="row"><strong>Filtres intervenantes</strong><div id="filters"></div></div>
-
   <div class="row">
-    <button class="btn" id="btnSecteurs" title="Afficher les secteurs concaves">Secteurs concaves</button>
-    <button class="btn" id="btnIso10" title="Isochrones 10 min">Isochrone 10 min</button>
-    <button class="btn" id="btnIso15" title="Isochrones 15 min">Isochrone 15 min</button>
+    <button class="btn" id="btnSecteurs">Secteurs concaves</button>
+    <button class="btn" id="btnIso10">Isochrone 10 min</button>
+    <button class="btn" id="btnIso15">Isochrone 15 min</button>
   </div>
-
-  <div class="row">
-    <input type="email" id="email" placeholder="you@mairie.fr" style="width:58%" />
+<div class="row">
+  <input type="email" id="email" placeholder="email" style="width:46%" />
+  <input type="password" id="password" placeholder="mot de passe" style="width:46%; margin-left:6px" />
+  <div style="margin-top:6px">
     <button class="btn" id="btnLogin">Connexion</button>
     <button class="btn" id="btnLogout" style="display:none">Déconnexion</button>
-    <div class="muted" id="authState" style="margin-top:6px">Non connecté</div>
+    <small id="authState" class="muted" style="margin-left:6px">Non connecté</small>
   </div>
+</div>
 
-  <div class="row"><em>Conseil : Maj+clic sur un bénéficiaire pour éditer (si autorisé).</em></div>
+  <div class="row"><em>Conseil : Maj+clic sur un bénéficiaire pour éditer.</em></div>
 </div>
 <div id="map"></div>
 
@@ -46,10 +46,15 @@
 /*** CONFIG ***/
 const SUPABASE_URL = 'https://fauiwnvaynlbfzqlilbi.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhdWl3bnZheW5sYmZ6cWxpbGJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU1NDM0NzksImV4cCI6MjA3MTExOTQ3OX0.wDBJt9fw44LFOZOoJrva8DXhR9ScsZpZMDdHiWfU1xE';
-const MAP_CENTER = [48.8566, 2.3522], MAP_ZOOM = 12;
+/** ➜ seuls ces e-mails peuvent ÉDITER */
+const ALLOW_EDIT = new Set(['mariemotta.geo@gmail.com','amelie10634@gmail.com']);
 
-/** ➜ ALLOWLIST: seuls ces e-mails peuvent ÉDITER */
-const ALLOW_EDIT = new Set(['mariemotta.geo@gmail.com','mariemotta@gmail.com']);
+function canView(){ return !!session; } // VOIR = authentifié
+function canEdit(){
+  const email = session?.user?.email?.toLowerCase() || '';
+  return !!session && ALLOW_EDIT.has(email); // ÉDITER = allowlist
+}
+const MAP_CENTER = [50.96783,2.42853], MAP_ZOOM = 12;
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let session = null;
@@ -65,64 +70,16 @@ const filterSet = new Set();
 
 /*** HELPERS ***/
 function colorFor(id){ let h=0; for (let i=0;i<String(id).length;i++) h=(h*31+String(id).charCodeAt(i))%360; return `hsl(${h},70%,45%)`; }
-function canView(){ return !!session; } // ➜ VOIR = connecté
-function canEdit(){
-  const email = session?.user?.email?.toLowerCase() || '';
-  return !!session && ALLOW_EDIT.has(email); // ➜ ÉDITER = allowlist
-}
 function status(s){ document.getElementById('authState').textContent = s; }
 
-function clearLayers(){
-  if (lyrBenef) { map.removeLayer(lyrBenef); lyrBenef = null; }
-  if (lyrInterv){ map.removeLayer(lyrInterv); lyrInterv = null; }
-  hullLayer.clearLayers();
-  isoLayer.clearLayers();
-  editGroup.clearLayers();
-}
-
-/** Afficher/masquer les contrôles d'édition et brancher Leaflet.draw uniquement si autorisé */
-function refreshEditingUI(){
-  // Afficher ou masquer certains boutons si nécessaire (ex: actions sensibles d'édition)
-  // Ici, Secteurs/Isochrones peuvent rester visibles en lecture; on bloque l'action plus bas si non connecté.
-  // Contrôle Leaflet Draw (déplacement des points) ➜ seulement pour éditeurs
-  if (window.drawCtrl) { map.removeControl(window.drawCtrl); window.drawCtrl = null; }
-  if (canEdit()) {
-    window.drawCtrl = new L.Control.Draw({ draw:false, edit:{ featureGroup: editGroup, remove:false } });
-    map.addControl(window.drawCtrl);
-    map.off(L.Draw.Event.EDITED);
-    map.on(L.Draw.Event.EDITED, async (e)=>{
-      const layers = e.layers;
-      for (const id in layers._layers){
-        const layer = layers._layers[id];
-        const f = layer.feature, ll = layer.getLatLng();
-        // RLS bloquera si l'utilisateur n'est pas autorisé, mais on ne devrait jamais arriver ici sans canEdit()
-        const { error } = await supabase.from('beneficiaires')
-          .update({ lat: ll.lat, lon: ll.lng })
-          .eq('id_beneficiaire', f.properties.id_beneficiaire);
-        if (error) alert(error.message);
-      }
-      await loadData();
-    });
-  } else {
-    map.off(L.Draw.Event.EDITED);
-  }
-}
-
-/*** DATA LOADING — appelé UNIQUEMENT une fois connecté ***/
 async function loadData(){
-  // Lecture protégée : RLS côté DB exige auth ; côté front on ne vient ici que si canView()
   const [resI, resB] = await Promise.all([
     supabase.from('vw_intervenantes_points').select('*'),
     supabase.from('vw_beneficiaires_enriched').select('*')
   ]);
-  if (resI.error || resB.error) {
-    console.error(resI.error || resB.error);
-    return;
-  }
   renderInterv(resI.data||[]);
   renderBenef(resB.data||[]);
   buildFilters(resI.data||[], resB.data||[]);
-  refreshEditingUI();
 }
 
 function renderInterv(rows){
@@ -160,13 +117,12 @@ function renderBenef(rows){
     onEachFeature:(f, layer)=>{
       layer.on('click', ()=>{
         const p=f.properties, ints=(p.intervenantes||[]).join(', ');
-        const disabled = canEdit() ? '' : 'disabled';
         const html = `
           <b>${p.nom||p.id_beneficiaire}</b><br>
           Adresse: <input id="f_addr" value="${p.adresse_beneficiaire||''}" style="width:100%"><br>
           Intervenantes (CSV): <input id="f_ints" value="${ints}" style="width:100%"><br>
-          <button id="btnSave" ${disabled}>Enregistrer</button>
-          <button id="btnPrim" ${disabled}>Définir principale</button>
+          <button id="btnSave" ${canEdit()?'':'disabled'}>Enregistrer</button>
+          <button id="btnPrim" ${canEdit()?'':'disabled'}>Définir principale</button>
         `;
         layer.bindPopup(html).openPopup();
         layer.once('popupopen', ()=>{
@@ -175,36 +131,52 @@ function renderBenef(rows){
             $('btnSave').onclick = async ()=>{
               const addr = $('f_addr').value.trim();
               const ids  = $('f_ints').value.split(',').map(s=>s.trim()).filter(Boolean);
+
               // reset liens
               await supabase.from('lien').delete().eq('id_beneficiaire', p.id_beneficiaire);
               if (ids.length){
                 const rows = ids.map((id,i)=>({ id_beneficiaire:p.id_beneficiaire, id_intervenante:id, is_primary:i===0 }));
-                const { error } = await supabase.from('lien').insert(rows);
-                if (error) return alert(error.message);
+                await supabase.from('lien').insert(rows);
               }
-              const { error: e2 } = await supabase.from('beneficiaires').update({ adresse_beneficiaire: addr }).eq('id_beneficiaire', p.id_beneficiaire);
-              if (e2) alert(e2.message);
+              await supabase.from('beneficiaires').update({ adresse_beneficiaire: addr }).eq('id_beneficiaire', p.id_beneficiaire);
               await loadData();
             };
             $('btnPrim').onclick = async ()=>{
               const ids = $('f_ints').value.split(',').map(s=>s.trim()).filter(Boolean);
               if (!ids.length) return;
+              // tout passer à false puis un à true
               await supabase.from('lien').update({ is_primary:false }).eq('id_beneficiaire', p.id_beneficiaire);
-              const { error } = await supabase.from('lien').update({ is_primary:true })
+              await supabase.from('lien').update({ is_primary:true })
                 .eq('id_beneficiaire', p.id_beneficiaire).eq('id_intervenante', ids[0]);
-              if (error) alert(error.message);
               await loadData();
             };
           }
         });
       });
-      // Édition géo (drag) ➜ on ajoute tous les layers au featureGroup; Draw n'est activé que si canEdit()
+      // édition géo : drag (via Leaflet.draw éditeur de groupes)
       editGroup.addLayer(layer);
     }
   }).addTo(map);
+
+  // Contrôle d’édition (déplacement)
+  if (window.drawCtrl) map.removeControl(window.drawCtrl);
+  window.drawCtrl = new L.Control.Draw({ draw:false, edit:{ featureGroup: editGroup, remove:false } });
+  map.addControl(window.drawCtrl);
+  map.off(L.Draw.Event.EDITED);
+  map.on(L.Draw.Event.EDITED, async (e)=>{
+    if (!canEdit()) return;
+    const layers = e.layers;
+    for (const id in layers._layers){
+      const layer = layers._layers[id];
+      const f = layer.feature, ll = layer.getLatLng();
+      await supabase.from('beneficiaires')
+        .update({ lat: ll.lat, lon: ll.lng })
+        .eq('id_beneficiaire', f.properties.id_beneficiaire);
+    }
+    await loadData();
+  });
 }
 
-/** Filtres */
 function buildFilters(intervRows, benefRows){
   const ids = new Set();
   intervRows.forEach(r=>ids.add(String(r.id_intervenante)));
@@ -215,52 +187,51 @@ function buildFilters(intervRows, benefRows){
     label.innerHTML = `<input type="checkbox" value="${id}"> ${id}`;
     label.querySelector('input').onchange = e=>{
       if (e.target.checked) filterSet.add(id); else filterSet.delete(id);
-      // Re-filtrer sur la couche actuelle
-      if (lyrBenef) renderBenef(benefRows||[]);
+      renderBenef(benefRows||[]);
     };
     box.appendChild(label);
   });
 }
 
-/*** SECTEURS CONCAVES ***/
+/*** SECTEURS CONCAVES (depuis la vue PostGIS) ***/
 document.getElementById('btnSecteurs').onclick = async ()=>{
-  if (!canView()) return alert('Connectez-vous pour afficher les secteurs.');
   hullLayer.clearLayers();
-  // Recommandé : utilisez la vue GeoJSON côté DB (vw_secteurs_concaves_geojson)
-  const { data, error } = await supabase.from('vw_secteurs_concaves_geojson').select('id_intervenante, geojson');
-  if (error) return alert(error.message);
-  (data||[]).forEach(r => L.geoJSON(r.geojson, { style:{ color: colorFor(r.id_intervenante), weight:2, fillOpacity:.15 }}).addTo(hullLayer));
+  const { data, error } = await supabase.from('vw_secteurs_concaves').select('id_intervenante, geom');
+  if (error) return console.error(error);
+  // `geom` arrive en WKB hex ; on préfère une vue GeoJSON pour éviter la conversion.
+  // Si vous avez créé vw_secteurs_concaves_geojson :
+  // const { data } = await supabase.from('vw_secteurs_concaves_geojson').select('id_intervenante, geojson');
+  // data.forEach(r => L.geoJSON(r.geojson, { style:{ color: colorFor(r.id_intervenante), weight:2, fillOpacity:.15 }}).addTo(hullLayer));
+
+  // Si vous n'avez que 'geom' (WKB), remplacez la vue par la version GeoJSON comme suggéré plus haut.
 };
 
 /*** ISOCHRONES ***/
 async function doIso(seconds){
-  if (!canView()) return alert('Connectez-vous pour afficher les isochrones.');
   isoLayer.clearLayers();
-  const { data: rows, error } = await supabase.from('vw_intervenantes_points').select('id_intervenante');
-  if (error) return alert(error.message);
+  // ids ciblés = filtres actifs sinon toutes les intervenantes du moment
+  const { data: rows } = await supabase.from('vw_intervenantes_points').select('id_intervenante');
   const ids = (Array.from(filterSet).length? Array.from(filterSet) : (rows||[]).map(r=>r.id_intervenante));
-  const { data, error: err2 } = await supabase.functions.invoke('isochrones', { body:{ ids, range:[seconds] }});
-  if (err2) return alert(err2.message || 'Erreur isochrones');
+  const { data, error } = await supabase.functions.invoke('isochrones', { body:{ ids, range:[seconds] }});
+  if (error) return console.error(error);
   L.geoJSON(data, { style:{ color:'#000', weight:1, fillOpacity:.08 } }).addTo(isoLayer);
 }
 document.getElementById('btnIso10').onclick = ()=>doIso(600);
 document.getElementById('btnIso15').onclick = ()=>doIso(900);
 
-/*** AUTH — Magic link (signup bloqué côté dashboard conseillé) ***/
+/*** AUTH — Email + mot de passe ***/
 document.getElementById('btnLogin').onclick = async ()=>{
   const email = (document.getElementById('email').value||'').trim().toLowerCase();
-  if (!email) return;
-  // (Optionnel) côté front, n’envoyer le mail qu’aux 2 e-mails autorisés
+  const password = document.getElementById('password').value;
+  if (!email || !password) return alert('Entrez email et mot de passe.');
+  // Optionnel: refuser la connexion d'emblée si pas dans la allowlist
   if (!ALLOW_EDIT.has(email)) {
-    // Si tu veux permettre la lecture à d’autres comptes, enlève ce bloc.
+    // Si tu veux permettre la lecture à d'autres comptes, supprime ce if.
     return alert('Accès restreint. Contactez l’admin.');
   }
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options:{ emailRedirectTo: location.href, shouldCreateUser: false } // ➜ exige compte pré-créé
-  });
-  if (error) alert(error.message);
-  else alert("Lien de connexion envoyé. Consultez votre email.");
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) return alert(error.message);
+  // session sera gérée par onAuthStateChange ci-dessous
 };
 
 document.getElementById('btnLogout').onclick = async ()=>{
@@ -269,26 +240,32 @@ document.getElementById('btnLogout').onclick = async ()=>{
 
 supabase.auth.onAuthStateChange(async (_evt, s)=>{
   session = s?.user ? s : null;
+
+  // UI login/logout + statut
   document.getElementById('btnLogout').style.display = session ? 'inline-block' : 'none';
-  status(session ? `Connecté : ${session.user.email}` : 'Non connecté');
+  document.getElementById('authState').textContent = session ? `Connecté : ${session.user.email}` : 'Non connecté';
 
   if (canView()) {
-    await loadData();        // ➜ charge les données UNIQUEMENT si connecté
+    await loadData();        // charge les données UNIQUEMENT si connecté
+    refreshEditingUI();      // (dé)branche l’édition si autorisé
   } else {
-    clearLayers();           // ➜ vide la carte si déconnexion
+    clearLayers();           // vide la carte si déconnecté
+    refreshEditingUI();
   }
-  refreshEditingUI();        // ➜ (dé)branche l’édition suivant les droits
 });
 
-/*** BOOTSTRAP — au premier chargement, récupérer la session et appliquer la même logique */
+/*** BOOTSTRAP — au chargement, reprendre la session si elle existe */
 (async ()=>{
   const { data: { session: s } } = await supabase.auth.getSession();
   session = s?.user ? s : null;
   document.getElementById('btnLogout').style.display = session ? 'inline-block' : 'none';
-  status(session ? `Connecté : ${session.user.email}` : 'Non connecté');
-  if (canView()) await loadData();
+  document.getElementById('authState').textContent = session ? `Connecté : ${session.user.email}` : 'Non connecté';
+  if (canView()) {
+    await loadData();
+  }
   refreshEditingUI();
 })();
+
 </script>
 </body>
 </html>
