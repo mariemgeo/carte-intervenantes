@@ -186,12 +186,17 @@ function clearLayers(){
 
 /*** ====== UI selon auth ====== ***/
 function refreshAuthUI(){
-  const show = canView();
-  showRightPanel(show);
-  document.getElementById('btnLogout').style.display  = show ? 'inline-block' : 'none';
+  const show = !!session; // connecté = on montre le panneau
+  const panel = document.getElementById('panelRight');
+  if (panel) panel.style.display = show ? 'block' : 'none';
 
+  // bouton de logout
+  const btnLogout = document.getElementById('btnLogout');
+  if (btnLogout) btnLogout.style.display = show ? 'inline-block' : 'none';
+
+  // Leaflet.draw si éditeur autorisé
   if (window.drawCtrl) { map.removeControl(window.drawCtrl); window.drawCtrl = null; }
-  if (canEdit()) {
+  if (session && ALLOW_EDIT.has((session.user?.email || '').toLowerCase())) {
     window.drawCtrl = new L.Control.Draw({ draw:false, edit:{ featureGroup: editGroup, remove:false } });
     map.addControl(window.drawCtrl);
     map.off(L.Draw.Event.EDITED);
@@ -210,6 +215,7 @@ function refreshAuthUI(){
     map.off(L.Draw.Event.EDITED);
   }
 }
+
 
 /*** ====== BAN ====== ***/
 async function geocodeBAN(q){
@@ -481,26 +487,36 @@ document.getElementById('btnLogin').onclick = async ()=>{
   const email = (document.getElementById('email').value||'').trim().toLowerCase();
   const password = document.getElementById('password').value;
   if (!email || !password) return alert('Entrez email et mot de passe.');
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) alert(error.message);
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) { alert(error.message); return; }
+  // feedback immédiat
+  session = data?.session || (await supabase.auth.getSession()).data.session || null;
+  setAuthText();
+  refreshAuthUI();
+  // on laisse onAuthStateChange charger les données
 };
+
 document.getElementById('btnLogout').onclick = async ()=>{ await supabase.auth.signOut(); };
 
 supabase.auth.onAuthStateChange(async (_evt, s)=>{
   session = s?.user ? s : null;
   setAuthText();
-  if (canView()) await loadData(); else clearLayers();
+  // 1) Afficher/masquer immédiatement
   refreshAuthUI();
+  // 2) Charger (ou vider) les données ensuite
+  if (session) { await loadData(); } else { clearLayers(); }
 });
+
 
 /*** ====== BOOTSTRAP ====== ***/
 (async ()=>{
   const { data: { session: s } } = await supabase.auth.getSession();
   session = s?.user ? s : null;
   setAuthText();
-  if (canView()) await loadData();
-  refreshAuthUI();
+  refreshAuthUI();        // montrer/cacher tout de suite
+  if (session) await loadData();
 })();
+
 </script>
 </body>
 </html>
