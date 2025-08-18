@@ -4,38 +4,113 @@
   <meta charset="utf-8" />
   <title>Carte Intervenantes / Bénéficiaires</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet"
-    href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <style>
     html,body,#map{height:100%;margin:0}
-    .panel{position:absolute;top:10px;left:10px;z-index:1000;background:#fff;padding:10px;border-radius:8px;max-width:340px;box-shadow:0 2px 12px rgba(0,0,0,.15);font:14px system-ui}
+    .panel{position:absolute;top:10px;left:10px;z-index:1000;background:#fff;padding:10px;border-radius:8px;max-width:420px;box-shadow:0 2px 12px rgba(0,0,0,.15);font:14px system-ui}
     .btn{padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#f7f7f7;cursor:pointer}
     .btn + .btn { margin-left:6px }
-    .row{margin:6px 0}
+    .row{margin:8px 0}
+    .muted{color:#666}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+    input, select { width:100%; box-sizing:border-box; padding:6px }
+    fieldset { border:1px solid #eee; border-radius:8px; padding:8px }
+    legend { font-weight:600; }
+    .small { font-size:12px }
+    .pill { display:inline-block; padding:2px 6px; border-radius:999px; background:#f0f0f0; margin:2px 4px 0 0 }
   </style>
 </head>
 <body>
 <div class="panel">
-  <div class="row"><strong>Filtres intervenantes</strong><div id="filters"></div></div>
+  <div class="row grid">
+    <div>
+      <strong>Filtres intervenantes</strong>
+      <div id="filters" class="small"></div>
+    </div>
+    <div>
+      <strong>Recherche d’adresse (BAN)</strong>
+      <input id="banQuery" list="banList" placeholder="ex: 10 rue de Paris" />
+      <datalist id="banList"></datalist>
+      <button class="btn" id="btnBanGo">Aller</button>
+    </div>
+  </div>
+
   <div class="row">
     <button class="btn" id="btnSecteurs">Secteurs concaves</button>
     <button class="btn" id="btnIso10">Isochrone 10 min</button>
     <button class="btn" id="btnIso15">Isochrone 15 min</button>
   </div>
-<div class="row">
-  <input type="email" id="email" placeholder="email" style="width:46%" />
-  <input type="password" id="password" placeholder="mot de passe" style="width:46%; margin-left:6px" />
-  <div style="margin-top:6px">
-    <button class="btn" id="btnLogin">Connexion</button>
-    <button class="btn" id="btnLogout" style="display:none">Déconnexion</button>
-    <small id="authState" class="muted" style="margin-left:6px">Non connecté</small>
-  </div>
+
+  <fieldset class="row">
+    <legend>Connexion</legend>
+    <div class="grid">
+      <input type="email" id="email" placeholder="email" />
+      <input type="password" id="password" placeholder="mot de passe" />
+    </div>
+    <div style="margin-top:6px">
+      <button class="btn" id="btnLogin">Connexion</button>
+      <button class="btn" id="btnLogout" style="display:none">Déconnexion</button>
+      <span class="muted" id="authState" style="margin-left:6px">Non connecté</span>
+    </div>
+  </fieldset>
+
+  <fieldset class="row">
+    <legend>Créer / Éditer une intervenante</legend>
+    <div class="grid">
+      <input id="ci_id" placeholder="ID intervenante (ex: I01)" />
+      <input id="ci_nom" placeholder="Nom" />
+    </div>
+    <div class="grid">
+      <input id="ci_addr" list="banList" placeholder="Adresse (BAN)" />
+      <input type="color" id="ci_color" value="#e91e63" />
+    </div>
+    <div class="small muted">Astuce : tape l’adresse puis clique “Géocoder”.</div>
+    <div class="row">
+      <button class="btn" id="ci_geocode">Géocoder adresse</button>
+      <button class="btn" id="ci_save">Créer/Mettre à jour</button>
+    </div>
+    <div class="row">
+      <strong>Lier un bénéficiaire</strong><br/>
+      <select id="ci_benef_select"><option value="">— choisir bénéficiaire —</option></select>
+      <button class="btn" id="ci_link">Lier (primaire)</button>
+      <span class="small muted">ou créer un bénéficiaire :</span>
+      <div class="grid" style="margin-top:6px">
+        <input id="cb_id_inline" placeholder="ID bénéficiaire (ex: B01)" />
+        <input id="cb_nom_inline" placeholder="Nom bénéficiaire" />
+      </div>
+      <input id="cb_addr_inline" list="banList" placeholder="Adresse bénéficiaire (BAN)" />
+      <button class="btn" id="cb_create_and_link">Créer & Lier</button>
+    </div>
+    <div id="ci_status" class="small muted"></div>
+  </fieldset>
+
+  <fieldset class="row">
+    <legend>Créer un bénéficiaire</legend>
+    <div class="grid">
+      <input id="cb_id" placeholder="ID bénéficiaire (ex: B02)" />
+      <input id="cb_nom" placeholder="Nom" />
+    </div>
+    <input id="cb_addr" list="banList" placeholder="Adresse bénéficiaire (BAN)" />
+    <select id="cb_interv_select"><option value="">— lier à intervenante —</option></select>
+    <div class="row">
+      <button class="btn" id="cb_geocode">Géocoder adresse</button>
+      <button class="btn" id="cb_save">Créer & Lier</button>
+    </div>
+    <div id="cb_status" class="small muted"></div>
+  </fieldset>
+
+  <fieldset class="row">
+    <legend>Liens intervenantes ↔ bénéficiaires</legend>
+    <select id="ln_benef"><option value="">— choisir bénéficiaire —</option></select>
+    <div id="ln_interv_list" class="small" style="margin-top:6px"></div>
+    <div class="row">
+      <button class="btn" id="ln_save">Enregistrer les liens</button>
+    </div>
+    <div class="small muted">Cochez les intervenantes liées. La première cochée sera la “principale”.</div>
+  </fieldset>
 </div>
 
-  <div class="row"><em>Conseil : Maj+clic sur un bénéficiaire pour éditer.</em></div>
-</div>
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -46,57 +121,118 @@
 /*** CONFIG ***/
 const SUPABASE_URL = 'https://fauiwnvaynlbfzqlilbi.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhdWl3bnZheW5sYmZ6cWxpbGJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU1NDM0NzksImV4cCI6MjA3MTExOTQ3OX0.wDBJt9fw44LFOZOoJrva8DXhR9ScsZpZMDdHiWfU1xE';
+const MAP_CENTER = [48.8566, 2.3522], MAP_ZOOM = 12;
+
 /** ➜ seuls ces e-mails peuvent ÉDITER */
-const ALLOW_EDIT = new Set(['mariemotta.geo@gmail.com','amelie10634@gmail.com']);
+const ALLOW_EDIT = new Set(['mariemotta.geo@gmail.com','mariemotta@gmail.com']);
 
-function canView(){ return !!session; } // VOIR = authentifié
-function canEdit(){
-  const email = session?.user?.email?.toLowerCase() || '';
-  return !!session && ALLOW_EDIT.has(email); // ÉDITER = allowlist
-}
-const MAP_CENTER = [50.96783,2.42853], MAP_ZOOM = 12;
+/** Client sur le schéma api */
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { db: { schema: 'api' } });
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let session = null;
 
-/*** MAP ***/
+/*** MAP + LAYERS ***/
 const map = L.map('map').setView(MAP_CENTER, MAP_ZOOM);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20 }).addTo(map);
+const base = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:20 }).addTo(map);
 
-let lyrInterv, lyrBenef, editGroup = L.featureGroup().addTo(map);
+// Overlays
+const grpInterv = L.layerGroup().addTo(map);
+const grpBenef  = L.layerGroup().addTo(map);
 const hullLayer = L.layerGroup().addTo(map);
 const isoLayer  = L.layerGroup().addTo(map);
+
+// Layer control
+const overlays = {
+  "Intervenantes": grpInterv,
+  "Bénéficiaires": grpBenef,
+  "Secteurs concaves": hullLayer,
+  "Isochrones": isoLayer
+};
+L.control.layers(null, overlays, { collapsed:false }).addTo(map);
+
+// Pour édition géométrique
+const editGroup = L.featureGroup().addTo(map);
+
 const filterSet = new Set();
+let cacheInterv = [];  // pour listes déroulantes
+let cacheBenef  = [];
 
 /*** HELPERS ***/
+function colorForFromProp(p){ return p?.color || colorFor(p?.id_intervenante); }
 function colorFor(id){ let h=0; for (let i=0;i<String(id).length;i++) h=(h*31+String(id).charCodeAt(i))%360; return `hsl(${h},70%,45%)`; }
+function canView(){ return !!session; }
+function canEdit(){
+  const email = session?.user?.email?.toLowerCase() || '';
+  return !!session && ALLOW_EDIT.has(email);
+}
 function status(s){ document.getElementById('authState').textContent = s; }
+function setInfo(elId, msg){ const el=document.getElementById(elId); if(el) el.textContent=msg; }
 
+function clearLayers(){
+  grpInterv.clearLayers();
+  grpBenef.clearLayers();
+  hullLayer.clearLayers();
+  isoLayer.clearLayers();
+  editGroup.clearLayers();
+}
+
+async function geocodeBAN(q){
+  if(!q) return [];
+  const url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(q)}&limit=5`;
+  const res = await fetch(url); const j = await res.json();
+  return (j.features||[]).map(f=>({
+    label: f.properties.label,
+    lat: f.geometry.coordinates[1],
+    lon: f.geometry.coordinates[0]
+  }));
+}
+
+/*** BAN search box (pan carte) ***/
+document.getElementById('btnBanGo').onclick = async ()=>{
+  const q = document.getElementById('banQuery').value.trim();
+  const items = await geocodeBAN(q);
+  const dl = document.getElementById('banList'); dl.innerHTML='';
+  items.forEach(r=>{
+    const opt = document.createElement('option'); opt.value = r.label; dl.appendChild(opt);
+  });
+  if (items[0]) map.setView([items[0].lat, items[0].lon], 16);
+};
+
+/*** DATA LOADING ***/
 async function loadData(){
   const [resI, resB] = await Promise.all([
     supabase.from('vw_intervenantes_points').select('*'),
     supabase.from('vw_beneficiaires_enriched').select('*')
   ]);
-  renderInterv(resI.data||[]);
-  renderBenef(resB.data||[]);
-  buildFilters(resI.data||[], resB.data||[]);
+  if (resI.error || resB.error){ console.error(resI.error || resB.error); return; }
+  cacheInterv = resI.data||[];
+  cacheBenef  = resB.data||[];
+  renderInterv(cacheInterv);
+  renderBenef(cacheBenef);
+  buildFilters(cacheInterv, cacheBenef);
+  populateSelects();
+  refreshEditingUI();
 }
 
 function renderInterv(rows){
-  if (lyrInterv) map.removeLayer(lyrInterv);
+  grpInterv.clearLayers();
   const feats = rows.filter(r=>r.lat && r.lon).map(r=>({
     type:'Feature',
     geometry:{type:'Point', coordinates:[r.lon, r.lat]},
     properties:r
   }));
-  lyrInterv = L.geoJSON({type:'FeatureCollection', features:feats},{
-    pointToLayer:(f, latlng)=>L.circleMarker(latlng, {radius:7, color:'#000', weight:1, fillColor:colorFor(f.properties.id_intervenante), fillOpacity:.9}),
+  L.geoJSON({type:'FeatureCollection', features:feats},{
+    pointToLayer:(f, latlng)=>{
+      const fill = colorForFromProp(f.properties);
+      return L.circleMarker(latlng, {radius:7, color:'#000', weight:1, fillColor:fill, fillOpacity:.9});
+    },
     onEachFeature:(f,l)=>l.bindTooltip(`${f.properties.id_intervenante} — ${f.properties.nom||''}`)
-  }).addTo(map);
+  }).addTo(grpInterv);
 }
 
 function renderBenef(rows){
-  if (lyrBenef) { map.removeLayer(lyrBenef); editGroup.clearLayers(); }
+  grpBenef.clearLayers();
+  editGroup.clearLayers();
 
   function matchesFilter(f){
     if (!filterSet.size) return true;
@@ -108,21 +244,30 @@ function renderBenef(rows){
     geometry:{type:'Point', coordinates:[r.lon, r.lat]},
     properties:r
   }));
-  lyrBenef = L.geoJSON({type:'FeatureCollection', features:feats},{
-    pointToLayer:(f, latlng)=>{
-      const pid = f.properties.primary_intervenante;
-      return L.circleMarker(latlng, {radius:6, color:'#000', weight:1, fillColor: pid?colorFor(pid):'#666', fillOpacity:.8});
-    },
+
+  // carte des couleurs intervenantes pour styliser bénéficiaires
+  const colorByInterv = Object.fromEntries(cacheInterv.map(i=>[String(i.id_intervenante), i.color || colorFor(i.id_intervenante)]));
+
+  L.geoJSON({type:'FeatureCollection', features:feats},{
     filter: matchesFilter,
+    pointToLayer:(f, latlng)=>{
+      const ints = f.properties.intervenantes||[];
+      const primary = f.properties.primary_intervenante || ints[0] || null;
+      const second  = ints.length>=2 ? ints[1] : null;
+      const fillCol = primary ? (colorByInterv[primary] || colorFor(primary)) : '#666';
+      const strokeCol = second ? (colorByInterv[second] || colorFor(second)) : '#000';
+      return L.circleMarker(latlng, {radius:6, color: strokeCol, weight:2, fillColor: fillCol, fillOpacity:.85});
+    },
     onEachFeature:(f, layer)=>{
       layer.on('click', ()=>{
         const p=f.properties, ints=(p.intervenantes||[]).join(', ');
+        const disabled = canEdit() ? '' : 'disabled';
         const html = `
           <b>${p.nom||p.id_beneficiaire}</b><br>
           Adresse: <input id="f_addr" value="${p.adresse_beneficiaire||''}" style="width:100%"><br>
           Intervenantes (CSV): <input id="f_ints" value="${ints}" style="width:100%"><br>
-          <button id="btnSave" ${canEdit()?'':'disabled'}>Enregistrer</button>
-          <button id="btnPrim" ${canEdit()?'':'disabled'}>Définir principale</button>
+          <button id="btnSave" ${disabled}>Enregistrer</button>
+          <button id="btnPrim" ${disabled}>Définir principale</button>
         `;
         layer.bindPopup(html).openPopup();
         layer.once('popupopen', ()=>{
@@ -131,50 +276,33 @@ function renderBenef(rows){
             $('btnSave').onclick = async ()=>{
               const addr = $('f_addr').value.trim();
               const ids  = $('f_ints').value.split(',').map(s=>s.trim()).filter(Boolean);
-
-              // reset liens
-              await supabase.from('lien').delete().eq('id_beneficiaire', p.id_beneficiaire);
+              await supabase.from('lien_rw').delete().eq('id_beneficiaire', p.id_beneficiaire);
               if (ids.length){
                 const rows = ids.map((id,i)=>({ id_beneficiaire:p.id_beneficiaire, id_intervenante:id, is_primary:i===0 }));
-                await supabase.from('lien').insert(rows);
+                const { error } = await supabase.from('lien_rw').insert(rows);
+                if (error) return alert(error.message);
               }
-              await supabase.from('beneficiaires').update({ adresse_beneficiaire: addr }).eq('id_beneficiaire', p.id_beneficiaire);
+              const { error: e2 } = await supabase.from('beneficiaires_rw').update({ adresse_beneficiaire: addr }).eq('id_beneficiaire', p.id_beneficiaire);
+              if (e2) alert(e2.message);
               await loadData();
             };
             $('btnPrim').onclick = async ()=>{
               const ids = $('f_ints').value.split(',').map(s=>s.trim()).filter(Boolean);
               if (!ids.length) return;
-              // tout passer à false puis un à true
-              await supabase.from('lien').update({ is_primary:false }).eq('id_beneficiaire', p.id_beneficiaire);
-              await supabase.from('lien').update({ is_primary:true })
+              await supabase.from('lien_rw').update({ is_primary:false }).eq('id_beneficiaire', p.id_beneficiaire);
+              const { error } = await supabase.from('lien_rw').update({ is_primary:true })
                 .eq('id_beneficiaire', p.id_beneficiaire).eq('id_intervenante', ids[0]);
+              if (error) alert(error.message);
               await loadData();
             };
           }
         });
       });
-      // édition géo : drag (via Leaflet.draw éditeur de groupes)
-      editGroup.addLayer(layer);
+      editGroup.addLayer(layer); // Leaflet.draw sera activé si canEdit()
     }
-  }).addTo(map);
+  }).addTo(grpBenef);
 
-  // Contrôle d’édition (déplacement)
-  if (window.drawCtrl) map.removeControl(window.drawCtrl);
-  window.drawCtrl = new L.Control.Draw({ draw:false, edit:{ featureGroup: editGroup, remove:false } });
-  map.addControl(window.drawCtrl);
-  map.off(L.Draw.Event.EDITED);
-  map.on(L.Draw.Event.EDITED, async (e)=>{
-    if (!canEdit()) return;
-    const layers = e.layers;
-    for (const id in layers._layers){
-      const layer = layers._layers[id];
-      const f = layer.feature, ll = layer.getLatLng();
-      await supabase.from('beneficiaires')
-        .update({ lat: ll.lat, lon: ll.lng })
-        .eq('id_beneficiaire', f.properties.id_beneficiaire);
-    }
-    await loadData();
-  });
+  refreshEditingUI();
 }
 
 function buildFilters(intervRows, benefRows){
@@ -187,85 +315,247 @@ function buildFilters(intervRows, benefRows){
     label.innerHTML = `<input type="checkbox" value="${id}"> ${id}`;
     label.querySelector('input').onchange = e=>{
       if (e.target.checked) filterSet.add(id); else filterSet.delete(id);
-      renderBenef(benefRows||[]);
+      renderBenef(cacheBenef);
     };
     box.appendChild(label);
   });
 }
 
-/*** SECTEURS CONCAVES (depuis la vue PostGIS) ***/
-document.getElementById('btnSecteurs').onclick = async ()=>{
-  hullLayer.clearLayers();
-  const { data, error } = await supabase.from('vw_secteurs_concaves').select('id_intervenante, geom');
-  if (error) return console.error(error);
-  // `geom` arrive en WKB hex ; on préfère une vue GeoJSON pour éviter la conversion.
-  // Si vous avez créé vw_secteurs_concaves_geojson :
-  // const { data } = await supabase.from('vw_secteurs_concaves_geojson').select('id_intervenante, geojson');
-  // data.forEach(r => L.geoJSON(r.geojson, { style:{ color: colorFor(r.id_intervenante), weight:2, fillOpacity:.15 }}).addTo(hullLayer));
+function populateSelects(){
+  const selBenef = document.getElementById('ci_benef_select'); selBenef.innerHTML='<option value="">— choisir bénéficiaire —</option>';
+  cacheBenef.forEach(b => {
+    const opt = document.createElement('option');
+    opt.value = b.id_beneficiaire; opt.textContent = `${b.id_beneficiaire} — ${b.nom||''}`;
+    selBenef.appendChild(opt);
+  });
+  const selInterv = document.getElementById('cb_interv_select'); selInterv.innerHTML='<option value="">— lier à intervenante —</option>';
+  cacheInterv.forEach(i => {
+    const opt = document.createElement('option');
+    opt.value = i.id_intervenante; opt.textContent = `${i.id_intervenante} — ${i.nom||''}`;
+    selInterv.appendChild(opt);
+  });
+  // éditeur de liens (bénéficiaire dropdown)
+  const lnB = document.getElementById('ln_benef'); lnB.innerHTML = '<option value="">— choisir bénéficiaire —</option>';
+  cacheBenef.forEach(b=>{
+    const opt = document.createElement('option');
+    opt.value = b.id_beneficiaire; opt.textContent = `${b.id_beneficiaire} — ${b.nom||''}`;
+    lnB.appendChild(opt);
+  });
+}
 
-  // Si vous n'avez que 'geom' (WKB), remplacez la vue par la version GeoJSON comme suggéré plus haut.
+/*** ÉDITION UI / DRAW ***/
+function refreshEditingUI(){
+  if (window.drawCtrl) { map.removeControl(window.drawCtrl); window.drawCtrl = null; }
+  if (canEdit()) {
+    window.drawCtrl = new L.Control.Draw({ draw:false, edit:{ featureGroup: editGroup, remove:false } });
+    map.addControl(window.drawCtrl);
+    map.off(L.Draw.Event.EDITED);
+    map.on(L.Draw.Event.EDITED, async (e)=>{
+      const layers = e.layers;
+      for (const id in layers._layers){
+        const layer = layers._layers[id];
+        const f = layer.feature, ll = layer.getLatLng();
+        const { error } = await supabase.from('beneficiaires_rw')
+          .update({ lat: ll.lat, lon: ll.lng })
+          .eq('id_beneficiaire', f.properties.id_beneficiaire);
+        if (error) alert(error.message);
+      }
+      await loadData();
+    });
+  } else {
+    map.off(L.Draw.Event.EDITED);
+  }
+}
+
+/*** SECTEURS CONCAVES ***/
+document.getElementById('btnSecteurs').onclick = async ()=>{
+  if (!canView()) return alert('Connectez-vous.');
+  hullLayer.clearLayers();
+  const { data, error } = await supabase.from('vw_secteurs_concaves_geojson').select('id_intervenante, geojson');
+  if (error) return alert(error.message);
+  (data||[]).forEach(r => L.geoJSON(r.geojson, { style:{ color: colorFor(r.id_intervenante), weight:2, fillOpacity:.15 }}).addTo(hullLayer));
 };
 
 /*** ISOCHRONES ***/
 async function doIso(seconds){
+  if (!canView()) return alert('Connectez-vous.');
   isoLayer.clearLayers();
-  // ids ciblés = filtres actifs sinon toutes les intervenantes du moment
-  const { data: rows } = await supabase.from('vw_intervenantes_points').select('id_intervenante');
-  const ids = (Array.from(filterSet).length? Array.from(filterSet) : (rows||[]).map(r=>r.id_intervenante));
+  const ids = (Array.from(filterSet).length
+    ? Array.from(filterSet)
+    : cacheInterv.map(r=>r.id_intervenante));
   const { data, error } = await supabase.functions.invoke('isochrones', { body:{ ids, range:[seconds] }});
-  if (error) return console.error(error);
+  if (error) return alert(error.message || 'Erreur isochrones');
   L.geoJSON(data, { style:{ color:'#000', weight:1, fillOpacity:.08 } }).addTo(isoLayer);
 }
 document.getElementById('btnIso10').onclick = ()=>doIso(600);
 document.getElementById('btnIso15').onclick = ()=>doIso(900);
+
+/*** CRÉER/ÉDITER INTERVENANTE ***/
+let ci_lat=null, ci_lon=null;
+document.getElementById('ci_geocode').onclick = async ()=>{
+  const addr = document.getElementById('ci_addr').value.trim();
+  if (!addr) return;
+  const hits = await geocodeBAN(addr);
+  if (!hits.length) return setInfo('ci_status','Adresse introuvable.');
+  ci_lat = hits[0].lat; ci_lon = hits[0].lon;
+  map.setView([ci_lat, ci_lon], 16);
+  setInfo('ci_status', `OK : ${hits[0].label} (${ci_lat.toFixed(5)}, ${ci_lon.toFixed(5)})`);
+};
+
+document.getElementById('ci_save').onclick = async ()=>{
+  if (!canEdit()) return alert('Non autorisé.');
+  const id = document.getElementById('ci_id').value.trim();
+  const nom = document.getElementById('ci_nom').value.trim();
+  const addr = document.getElementById('ci_addr').value.trim();
+  const color = document.getElementById('ci_color').value;
+  if (!id) return alert("ID intervenante requis.");
+
+  // si pas de coords, tenter géocodage
+  if (ci_lat==null || ci_lon==null) {
+    const hits = await geocodeBAN(addr);
+    if (hits[0]) { ci_lat=hits[0].lat; ci_lon=hits[0].lon; }
+  }
+  const payload = { id_intervenante:id, nom, adresse_intervenante:addr, lat:ci_lat, lon:ci_lon, color };
+  // upsert naïf : tenter update puis insert si 0 row affected
+  const upd = await supabase.from('intervenantes_rw').update(payload).eq('id_intervenante', id).select();
+  if (upd.error) return alert(upd.error.message);
+  if (!upd.data?.length) {
+    const ins = await supabase.from('intervenantes_rw').insert([payload]).select();
+    if (ins.error) return alert(ins.error.message);
+  }
+  ci_lat=ci_lon=null;
+  document.getElementById('ci_status').textContent = 'Intervenante enregistrée.';
+  await loadData();
+};
+
+document.getElementById('ci_link').onclick = async ()=>{
+  if (!canEdit()) return alert('Non autorisé.');
+  const id = document.getElementById('ci_id').value.trim();
+  const b  = document.getElementById('ci_benef_select').value;
+  if (!id || !b) return;
+  await supabase.from('lien_rw').delete().eq('id_beneficiaire', b).eq('id_intervenante', id); // éviter doublon
+  const { error } = await supabase.from('lien_rw').insert([{ id_beneficiaire:b, id_intervenante:id, is_primary:true }]);
+  if (error) return alert(error.message);
+  document.getElementById('ci_status').textContent = 'Lien créé (primaire).';
+  await loadData();
+};
+
+document.getElementById('cb_create_and_link').onclick = async ()=>{
+  if (!canEdit()) return alert('Non autorisé.');
+  const idI = document.getElementById('ci_id').value.trim();
+  const idB = document.getElementById('cb_id_inline').value.trim();
+  const nomB= document.getElementById('cb_nom_inline').value.trim();
+  const addr= document.getElementById('cb_addr_inline').value.trim();
+  if (!idI || !idB) return alert('ID intervenante + ID bénéficiaire requis.');
+  const hits = await geocodeBAN(addr);
+  const lat = hits[0]?.lat ?? null, lon = hits[0]?.lon ?? null;
+
+  const insB = await supabase.from('beneficiaires_rw').insert([{ id_beneficiaire:idB, nom:nomB, adresse_beneficiaire:addr, lat, lon }]).select();
+  if (insB.error) return alert(insB.error.message);
+  await supabase.from('lien_rw').insert([{ id_beneficiaire:idB, id_intervenante:idI, is_primary:true }]);
+  document.getElementById('ci_status').textContent = 'Bénéficiaire créé & lié.';
+  await loadData();
+};
+
+/*** CRÉER BÉNÉFICIAIRE ***/
+let cb_lat=null, cb_lon=null;
+document.getElementById('cb_geocode').onclick = async ()=>{
+  const addr = document.getElementById('cb_addr').value.trim();
+  const hits = await geocodeBAN(addr);
+  if (!hits[0]) return setInfo('cb_status','Adresse introuvable.');
+  cb_lat = hits[0].lat; cb_lon = hits[0].lon;
+  map.setView([cb_lat, cb_lon], 16);
+  setInfo('cb_status', `OK : ${hits[0].label} (${cb_lat.toFixed(5)}, ${cb_lon.toFixed(5)})`);
+};
+document.getElementById('cb_save').onclick = async ()=>{
+  if (!canEdit()) return alert('Non autorisé.');
+  const idB = document.getElementById('cb_id').value.trim();
+  const nom = document.getElementById('cb_nom').value.trim();
+  const addr= document.getElementById('cb_addr').value.trim();
+  const idI = document.getElementById('cb_interv_select').value;
+  if (!idB) return alert('ID bénéficiaire requis.');
+  if (cb_lat==null || cb_lon==null){
+    const hits = await geocodeBAN(addr);
+    if (hits[0]) { cb_lat=hits[0].lat; cb_lon=hits[0].lon; }
+  }
+  const ins = await supabase.from('beneficiaires_rw').insert([{ id_beneficiaire:idB, nom, adresse_beneficiaire:addr, lat:cb_lat, lon:cb_lon }]).select();
+  if (ins.error) return alert(ins.error.message);
+  if (idI) await supabase.from('lien_rw').insert([{ id_beneficiaire:idB, id_intervenante:idI, is_primary:true }]);
+  cb_lat=cb_lon=null;
+  setInfo('cb_status','Bénéficiaire créé.');
+  await loadData();
+};
+
+/*** ÉDITEUR DE LIENS n-n ***/
+document.getElementById('ln_benef').onchange = ()=>{
+  const bId = document.getElementById('ln_benef').value;
+  const box = document.getElementById('ln_interv_list'); box.innerHTML='';
+  if (!bId) return;
+  const b = cacheBenef.find(x=>x.id_beneficiaire===bId);
+  const current = new Set(b?.intervenantes||[]);
+  const primary = b?.primary_intervenante || null;
+
+  cacheInterv.forEach(i=>{
+    const id=i.id_intervenante;
+    const chk = document.createElement('input'); chk.type='checkbox'; chk.value=id; chk.checked=current.has(id);
+    const radio = document.createElement('input'); radio.type='radio'; radio.name='ln_primary'; radio.value=id; radio.checked = (primary===id);
+    const label = document.createElement('label');
+    label.className='pill'; label.style.border = '1px solid #ddd';
+    label.appendChild(chk); label.append(` ${id} `);
+    label.appendChild(radio); label.append(' primaire');
+    box.appendChild(label);
+  });
+};
+
+document.getElementById('ln_save').onclick = async ()=>{
+  if (!canEdit()) return alert('Non autorisé.');
+  const bId = document.getElementById('ln_benef').value;
+  if (!bId) return;
+  const checks = Array.from(document.querySelectorAll('#ln_interv_list input[type=checkbox]'));
+  const selected = checks.filter(c=>c.checked).map(c=>c.value);
+  const primary = (document.querySelector('#ln_interv_list input[name=ln_primary]:checked')||{}).value || null;
+
+  await supabase.from('lien_rw').delete().eq('id_beneficiaire', bId);
+  if (selected.length){
+    const rows = selected.map((id,i)=>({ id_beneficiaire:bId, id_intervenante:id, is_primary: (primary? id===primary : i===0) }));
+    const { error } = await supabase.from('lien_rw').insert(rows);
+    if (error) return alert(error.message);
+  }
+  await loadData();
+};
 
 /*** AUTH — Email + mot de passe ***/
 document.getElementById('btnLogin').onclick = async ()=>{
   const email = (document.getElementById('email').value||'').trim().toLowerCase();
   const password = document.getElementById('password').value;
   if (!email || !password) return alert('Entrez email et mot de passe.');
-  // Optionnel: refuser la connexion d'emblée si pas dans la allowlist
-  if (!ALLOW_EDIT.has(email)) {
-    // Si tu veux permettre la lecture à d'autres comptes, supprime ce if.
-    return alert('Accès restreint. Contactez l’admin.');
-  }
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  // Option: si tu veux restreindre TOUT accès aux deux comptes, décommente :
+  // if (!ALLOW_EDIT.has(email)) return alert('Accès restreint. Contactez l’admin.');
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return alert(error.message);
-  // session sera gérée par onAuthStateChange ci-dessous
 };
-
-document.getElementById('btnLogout').onclick = async ()=>{
-  await supabase.auth.signOut();
-};
+document.getElementById('btnLogout').onclick = async ()=>{ await supabase.auth.signOut(); };
 
 supabase.auth.onAuthStateChange(async (_evt, s)=>{
   session = s?.user ? s : null;
-
-  // UI login/logout + statut
   document.getElementById('btnLogout').style.display = session ? 'inline-block' : 'none';
-  document.getElementById('authState').textContent = session ? `Connecté : ${session.user.email}` : 'Non connecté';
+  status(session ? `Connecté : ${session.user.email}` : 'Non connecté');
 
-  if (canView()) {
-    await loadData();        // charge les données UNIQUEMENT si connecté
-    refreshEditingUI();      // (dé)branche l’édition si autorisé
-  } else {
-    clearLayers();           // vide la carte si déconnecté
-    refreshEditingUI();
-  }
+  if (canView()) await loadData();
+  else clearLayers();
+
+  refreshEditingUI();
 });
 
-/*** BOOTSTRAP — au chargement, reprendre la session si elle existe */
+/*** BOOTSTRAP ***/
 (async ()=>{
   const { data: { session: s } } = await supabase.auth.getSession();
   session = s?.user ? s : null;
   document.getElementById('btnLogout').style.display = session ? 'inline-block' : 'none';
-  document.getElementById('authState').textContent = session ? `Connecté : ${session.user.email}` : 'Non connecté';
-  if (canView()) {
-    await loadData();
-  }
+  status(session ? `Connecté : ${session.user.email}` : 'Non connecté');
+  if (canView()) await loadData();
   refreshEditingUI();
 })();
-
 </script>
 </body>
 </html>
