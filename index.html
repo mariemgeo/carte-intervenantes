@@ -381,24 +381,38 @@ document.getElementById('ci_geocode').onclick = async ()=>{
 };
 document.getElementById('ci_save').onclick = async ()=>{
   if (!canEdit()) return alert('Non autorisé.');
+
   const id = document.getElementById('ci_id').value.trim();
   const nom = document.getElementById('ci_nom').value.trim();
   const addr = document.getElementById('ci_addr').value.trim();
   const color = document.getElementById('ci_color').value;
   if (!id) return alert("ID intervenante requis.");
+
+  // si pas de coords issues du bouton "Géocoder", on tente la BAN
   if (ci_lat==null || ci_lon==null) {
     const hits = await geocodeBAN(addr);
     if (hits[0]) { ci_lat=hits[0].lat; ci_lon=hits[0].lon; }
   }
+
   const payload = { id_intervenante:id, nom, adresse_intervenante:addr, lat:ci_lat, lon:ci_lon, color };
-  const upd = await supabase.from('api.intervenantes_rw').update(payload).eq('id_intervenante', id).select();
-  if (upd.error) { alert(upd.error.message); return; }
-  if (!upd.data?.length) {
-    const ins = await supabase.from('api.intervenantes_rw').insert([payload]).select();
-    if (ins.error) { alert(ins.error.message); return; }
+
+  // 1) Tenter INSERT
+  let ins = await supabase.from('api.intervenantes_rw').insert([payload]).select();
+  if (ins.error) {
+    // 2) Si doublon (clé existante) => faire UPDATE
+    // (code Postgres usuels pour doublon: 23505 ; selon PostgREST, error.code peut être absent, on teste aussi le message)
+    const isDup = ins.error.code === '23505' || /duplicate key|already exists/i.test(ins.error.message || '');
+    if (!isDup) { alert(ins.error.message); return; }
+
+    const upd = await supabase.from('api.intervenantes_rw').update(payload).eq('id_intervenante', id).select();
+    if (upd.error) { alert(upd.error.message); return; }
   }
-  ci_lat=ci_lon=null; alert('Intervenante enregistrée.'); await loadData();
+
+  ci_lat = ci_lon = null;
+  alert('Intervenante enregistrée.');
+  await loadData();
 };
+
 document.getElementById('ci_link').onclick = async ()=>{
   if (!canEdit()) return alert('Non autorisé.');
   const id = document.getElementById('ci_id').value.trim();
@@ -495,17 +509,16 @@ document.getElementById('btnLogin').onclick = async ()=>{
   refreshAuthUI();
   // on laisse onAuthStateChange charger les données
 };
+document.getElementById('btnLogout').onclick = async ()=>{
+  const { error } = await supabase.auth.signOut();
+  if (error) { alert(error.message); return; }
+  // remise à zéro UI locale (sans attendre l’événement)
+  session = null;
+  setAuthText();       // "Utilisateur non connecté — connectez-vous"
+  clearLayers();       // vide la carte pour être cohérent
+  refreshAuthUI();     // masque le panneau de droite
+};
 
-document.getElementById('btnLogout').onclick = async ()=>{ await supabase.auth.signOut(); };
-
-supabase.auth.onAuthStateChange(async (_evt, s)=>{
-  session = s?.user ? s : null;
-  setAuthText();
-  // 1) Afficher/masquer immédiatement
-  refreshAuthUI();
-  // 2) Charger (ou vider) les données ensuite
-  if (session) { await loadData(); } else { clearLayers(); }
-});
 
 
 /*** ====== BOOTSTRAP ====== ***/
