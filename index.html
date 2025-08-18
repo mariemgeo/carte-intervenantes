@@ -164,8 +164,12 @@ document.getElementById('lm_hull').onchange   = e => setLayerVisible(hullLayer, 
 document.getElementById('lm_iso').onchange    = e => setLayerVisible(isoLayer,  e.target.checked);
 
 /*** ====== SUPABASE CLIENT ====== ***/
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-let session = null;
+const supabase = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
+  { db: { schema: 'api' } }         // 👈 important
+);
+
 
 /*** ====== HELPERS ====== ***/
 function colorForFromProp(p){ return p?.color || colorFor(p?.id_intervenante); }
