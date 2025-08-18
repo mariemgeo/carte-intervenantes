@@ -8,13 +8,14 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <style>
     html,body,#map{height:100%;margin:0}
+    /* Panneaux compacts pour laisser de la place à la carte */
     .panel-left{
       position:absolute;top:10px;left:10px;z-index:1000;background:#fff;padding:10px;border-radius:8px;
-      width:420px;max-width:45vw;box-shadow:0 2px 12px rgba(0,0,0,.15);font:14px system-ui
+      width:360px;max-width:90vw;box-shadow:0 2px 12px rgba(0,0,0,.15);font:14px system-ui
     }
     .panel-right{
       position:absolute;top:10px;right:10px;z-index:1000;background:#fff;padding:10px;border-radius:8px;
-      width:420px;max-width:45vw;box-shadow:0 2px 12px rgba(0,0,0,.15);font:14px system-ui;display:none;
+      width:360px;max-width:90vw;box-shadow:0 2px 12px rgba(0,0,0,.15);font:14px system-ui;display:none;
     }
     .btn{padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#f7f7f7;cursor:pointer}
     .btn + .btn { margin-left:6px }
@@ -26,6 +27,9 @@
     legend { font-weight:600; }
     .small { font-size:12px }
     .pill { display:inline-block; padding:2px 6px; border-radius:999px; background:#f0f0f0; margin:2px 4px 0 0 }
+    /* Bandeau d’erreur discrète */
+    #errbar{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:#ffe9e9;color:#b00020;
+      padding:6px 10px;border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,.1);font:12px system-ui;display:none;z-index:1100}
   </style>
 </head>
 <body>
@@ -73,7 +77,7 @@
   </fieldset>
 </div>
 
-<!-- Panneau DROIT (éditeurs) -->
+<!-- Panneau DROIT (éditeurs) — caché si non connecté -->
 <div class="panel-right" id="panelRight">
   <!-- Éditeur Intervenante -->
   <fieldset class="row" id="fs_create_interv">
@@ -122,7 +126,7 @@
     <div id="cb_status" class="small muted"></div>
   </fieldset>
 
-  <!-- Éditeur Liens n-n (masqué si non connecté) -->
+  <!-- Éditeur Liens n-n -->
   <fieldset class="row" id="fs_links">
     <legend>Liens intervenantes ↔ bénéficiaires</legend>
     <select id="ln_benef"><option value="">— choisir bénéficiaire —</option></select>
@@ -135,13 +139,14 @@
 </div>
 
 <div id="map"></div>
+<div id="errbar"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 
 <script>
-/*** CONFIG ***/
+/*** ====== CONFIG ====== ***/
 const SUPABASE_URL = 'https://fauiwnvaynlbfzqlilbi.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhdWl3bnZheW5sYmZ6cWxpbGJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU1NDM0NzksImV4cCI6MjA3MTExOTQ3OX0.wDBJt9fw44LFOZOoJrva8DXhR9ScsZpZMDdHiWfU1xE';
 const MAP_CENTER = [48.8566, 2.3522], MAP_ZOOM = 12;
@@ -150,28 +155,43 @@ const MAP_CENTER = [48.8566, 2.3522], MAP_ZOOM = 12;
 const ALLOW_EDIT = new Set(['mariemotta.geo@gmail.com','mariemotta@gmail.com']);
 
 /** Client sur le schéma api */
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { db: { schema: 'api' } });
-
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { db: { schema: 'api' } });
 let session = null;
 
-/*** MAP + LAYERS ***/
-const map = L.map('map').setView(MAP_CENTER, MAP_ZOOM);
-const base = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:20 }).addTo(map);
+/*** ====== DIAGNOSTIC MINIMAL ====== ***/
+function showErr(e){
+  console.error(e);
+  const el = document.getElementById('errbar');
+  el.textContent = String(e).slice(0,240);
+  el.style.display = 'block';
+}
+window.addEventListener('error', (ev)=> showErr(ev.error||ev.message));
+window.addEventListener('unhandledrejection', (ev)=> showErr(ev.reason||'Unhandled promise rejection'));
 
-// Overlays (groupes contrôlés par notre gestionnaire perso)
+/*** ====== MAP ====== ***/
+const map = L.map('map').setView(MAP_CENTER, MAP_ZOOM);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:20 }).addTo(map);
+
+// Groupes/couches
 const grpInterv = L.layerGroup().addTo(map);
 const grpBenef  = L.layerGroup().addTo(map);
-const hullLayer = L.layerGroup();   // non visible par défaut
-const isoLayer  = L.layerGroup();   // non visible par défaut
-
-// Pour édition géométrique
+const hullLayer = L.layerGroup(); // off by default
+const isoLayer  = L.layerGroup(); // off by default
 const editGroup = L.featureGroup().addTo(map);
 
+// Gestionnaire de couches perso (checkboxes)
+function setLayerVisible(layer, checked){ if (checked) layer.addTo(map); else map.removeLayer(layer); }
+document.getElementById('lm_interv').onchange = e => setLayerVisible(grpInterv, e.target.checked);
+document.getElementById('lm_benef').onchange  = e => setLayerVisible(grpBenef,  e.target.checked);
+document.getElementById('lm_hull').onchange   = e => setLayerVisible(hullLayer, e.target.checked);
+document.getElementById('lm_iso').onchange    = e => setLayerVisible(isoLayer,  e.target.checked);
+
+/*** ====== STATE ====== ***/
 const filterSet = new Set();
 let cacheInterv = [];
 let cacheBenef  = [];
 
-/*** HELPERS ***/
+/*** ====== HELPERS ====== ***/
 function colorForFromProp(p){ return p?.color || colorFor(p?.id_intervenante); }
 function colorFor(id){ let h=0; for (let i=0;i<String(id).length;i++) h=(h*31+String(id).charCodeAt(i))%360; return `hsl(${h},70%,45%)`; }
 function canView(){ return !!session; }
@@ -192,40 +212,38 @@ function clearLayers(){
   editGroup.clearLayers();
 }
 
-/*** Afficher/masquer panneau droit & draw selon auth ***/
+/*** ====== UI selon authentification ====== ***/
 function refreshAuthUI(){
-  // panneau droit (éditeurs) et chaque fieldset dedans
   const show = canView();
   document.getElementById('panelRight').style.display = show ? 'block' : 'none';
   document.getElementById('fs_links').style.display   = show ? 'block' : 'none';
+  document.getElementById('btnLogout').style.display  = show ? 'inline-block' : 'none';
 
-  // bouton de logout
-  document.getElementById('btnLogout').style.display = show ? 'inline-block' : 'none';
-
-  // Leaflet.draw si éditeur autorisé
+  // Leaflet.draw si éditeur
   if (window.drawCtrl) { map.removeControl(window.drawCtrl); window.drawCtrl = null; }
   if (canEdit()) {
     window.drawCtrl = new L.Control.Draw({ draw:false, edit:{ featureGroup: editGroup, remove:false } });
     map.addControl(window.drawCtrl);
     map.off(L.Draw.Event.EDITED);
     map.on(L.Draw.Event.EDITED, async (e)=>{
-      const layers = e.layers;
-      for (const id in layers._layers){
-        const layer = layers._layers[id];
-        const f = layer.feature, ll = layer.getLatLng();
-        const { error } = await supabase.from('beneficiaires_rw')
-          .update({ lat: ll.lat, lon: ll.lng })
-          .eq('id_beneficiaire', f.properties.id_beneficiaire);
-        if (error) alert(error.message);
-      }
-      await loadData();
+      try{
+        for (const id in e.layers._layers){
+          const layer = e.layers._layers[id];
+          const f = layer.feature, ll = layer.getLatLng();
+          const { error } = await sb.from('beneficiaires_rw')
+            .update({ lat: ll.lat, lon: ll.lng })
+            .eq('id_beneficiaire', f.properties.id_beneficiaire);
+          if (error) throw error.message;
+        }
+        await loadData();
+      }catch(err){ showErr(err); }
     });
   } else {
     map.off(L.Draw.Event.EDITED);
   }
 }
 
-/*** BAN ***/
+/*** ====== BAN (géocodage) ====== ***/
 async function geocodeBAN(q){
   if(!q) return [];
   const url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(q)}&limit=5`;
@@ -237,38 +255,35 @@ async function geocodeBAN(q){
   }));
 }
 document.getElementById('btnBanGo').onclick = async ()=>{
-  const q = document.getElementById('banQuery').value.trim();
-  const items = await geocodeBAN(q);
-  const dl = document.getElementById('banList'); dl.innerHTML='';
-  items.forEach(r=>{
-    const opt = document.createElement('option'); opt.value = r.label; dl.appendChild(opt);
-  });
-  if (items[0]) map.setView([items[0].lat, items[0].lon], 16);
+  try{
+    const q = document.getElementById('banQuery').value.trim();
+    const items = await geocodeBAN(q);
+    const dl = document.getElementById('banList'); dl.innerHTML='';
+    items.forEach(r=>{
+      const opt = document.createElement('option'); opt.value = r.label; dl.appendChild(opt);
+    });
+    if (items[0]) map.setView([items[0].lat, items[0].lon], 16);
+  }catch(err){ showErr(err); }
 };
 
-/*** GESTIONNAIRE DE COUCHES (checkboxes) ***/
-function setLayerVisible(layer, checked){
-  if (checked) { layer.addTo(map); } else { map.removeLayer(layer); }
-}
-document.getElementById('lm_interv').onchange = e => setLayerVisible(grpInterv, e.target.checked);
-document.getElementById('lm_benef').onchange  = e => setLayerVisible(grpBenef,  e.target.checked);
-document.getElementById('lm_hull').onchange   = e => setLayerVisible(hullLayer, e.target.checked);
-document.getElementById('lm_iso').onchange    = e => setLayerVisible(isoLayer,  e.target.checked);
-
-/*** DATA LOADING ***/
+/*** ====== DATA LOADING (après connexion uniquement) ====== ***/
 async function loadData(){
-  const [resI, resB] = await Promise.all([
-    supabase.from('vw_intervenantes_points').select('*'),
-    supabase.from('vw_beneficiaires_enriched').select('*')
-  ]);
-  if (resI.error || resB.error){ console.error(resI.error || resB.error); return; }
-  cacheInterv = resI.data||[];
-  cacheBenef  = resB.data||[];
-  renderInterv(cacheInterv);
-  renderBenef(cacheBenef);
-  buildFilters(cacheInterv, cacheBenef);
-  populateSelects();
-  refreshAuthUI();
+  try{
+    const [resI, resB] = await Promise.all([
+      sb.from('vw_intervenantes_points').select('*'),
+      sb.from('vw_beneficiaires_enriched').select('*')
+    ]);
+    if (resI.error) throw resI.error.message;
+    if (resB.error) throw resB.error.message;
+
+    cacheInterv = resI.data||[];
+    cacheBenef  = resB.data||[];
+    renderInterv(cacheInterv);
+    renderBenef(cacheBenef);
+    buildFilters(cacheInterv, cacheBenef);
+    populateSelects();
+    refreshAuthUI();
+  }catch(err){ showErr(err); }
 }
 
 function renderInterv(rows){
@@ -330,26 +345,30 @@ function renderBenef(rows){
           const $ = id => document.getElementById(id);
           if (canEdit()){
             $('btnSave').onclick = async ()=>{
-              const addr = $('f_addr').value.trim();
-              const ids  = $('f_ints').value.split(',').map(s=>s.trim()).filter(Boolean);
-              await supabase.from('lien_rw').delete().eq('id_beneficiaire', p.id_beneficiaire);
-              if (ids.length){
-                const rows = ids.map((id,i)=>({ id_beneficiaire:p.id_beneficiaire, id_intervenante:id, is_primary:i===0 }));
-                const { error } = await supabase.from('lien_rw').insert(rows);
-                if (error) return alert(error.message);
-              }
-              const { error: e2 } = await supabase.from('beneficiaires_rw').update({ adresse_beneficiaire: addr }).eq('id_beneficiaire', p.id_beneficiaire);
-              if (e2) alert(e2.message);
-              await loadData();
+              try{
+                const addr = $('f_addr').value.trim();
+                const ids  = $('f_ints').value.split(',').map(s=>s.trim()).filter(Boolean);
+                await sb.from('lien_rw').delete().eq('id_beneficiaire', p.id_beneficiaire);
+                if (ids.length){
+                  const rows = ids.map((id,i)=>({ id_beneficiaire:p.id_beneficiaire, id_intervenante:id, is_primary:i===0 }));
+                  const { error } = await sb.from('lien_rw').insert(rows);
+                  if (error) throw error.message;
+                }
+                const { error: e2 } = await sb.from('beneficiaires_rw').update({ adresse_beneficiaire: addr }).eq('id_beneficiaire', p.id_beneficiaire);
+                if (e2) throw e2.message;
+                await loadData();
+              }catch(err){ showErr(err); }
             };
             $('btnPrim').onclick = async ()=>{
-              const ids = $('f_ints').value.split(',').map(s=>s.trim()).filter(Boolean);
-              if (!ids.length) return;
-              await supabase.from('lien_rw').update({ is_primary:false }).eq('id_beneficiaire', p.id_beneficiaire);
-              const { error } = await supabase.from('lien_rw').update({ is_primary:true })
-                .eq('id_beneficiaire', p.id_beneficiaire).eq('id_intervenante', ids[0]);
-              if (error) alert(error.message);
-              await loadData();
+              try{
+                const ids = $('f_ints').value.split(',').map(s=>s.trim()).filter(Boolean);
+                if (!ids.length) return;
+                await sb.from('lien_rw').update({ is_primary:false }).eq('id_beneficiaire', p.id_beneficiaire);
+                const { error } = await sb.from('lien_rw').update({ is_primary:true })
+                  .eq('id_beneficiaire', p.id_beneficiaire).eq('id_intervenante', ids[0]);
+                if (error) throw error.message;
+                await loadData();
+              }catch(err){ showErr(err); }
             };
           }
         });
@@ -398,132 +417,135 @@ function populateSelects(){
   });
 }
 
-/*** SECTEURS CONCAVES ***/
+/*** ====== SECTEURS / ISOCHRONES ====== ***/
 document.getElementById('btnSecteurs').onclick = async ()=>{
   if (!canView()) return alert('Connectez-vous.');
-  hullLayer.clearLayers();
-  const { data, error } = await supabase.from('vw_secteurs_concaves_geojson').select('id_intervenante, geojson');
-  if (error) return alert(error.message);
-  (data||[]).forEach(r => L.geoJSON(r.geojson, { style:{ color: colorFor(r.id_intervenante), weight:2, fillOpacity:.15 }}).addTo(hullLayer));
-  // si la couche n'est pas visible, on l'affiche automatiquement
-  if (!map.hasLayer(hullLayer)) {
-    document.getElementById('lm_hull').checked = true;
-    hullLayer.addTo(map);
-  }
+  try{
+    hullLayer.clearLayers();
+    const { data, error } = await sb.from('vw_secteurs_concaves_geojson').select('id_intervenante, geojson');
+    if (error) throw error.message;
+    (data||[]).forEach(r => L.geoJSON(r.geojson, { style:{ color: colorFor(r.id_intervenante), weight:2, fillOpacity:.15 }}).addTo(hullLayer));
+    if (!map.hasLayer(hullLayer)) { document.getElementById('lm_hull').checked = true; hullLayer.addTo(map); }
+  }catch(err){ showErr(err); }
 };
 
-/*** ISOCHRONES ***/
 async function doIso(seconds){
   if (!canView()) return alert('Connectez-vous.');
-  isoLayer.clearLayers();
-  const ids = (Array.from(filterSet).length
-    ? Array.from(filterSet)
-    : cacheInterv.map(r=>r.id_intervenante));
-  const { data, error } = await supabase.functions.invoke('isochrones', { body:{ ids, range:[seconds] }});
-  if (error) return alert(error.message || 'Erreur isochrones');
-  L.geoJSON(data, { style:{ color:'#000', weight:1, fillOpacity:.08 } }).addTo(isoLayer);
-  if (!map.hasLayer(isoLayer)) {
-    document.getElementById('lm_iso').checked = true;
-    isoLayer.addTo(map);
-  }
+  try{
+    isoLayer.clearLayers();
+    const ids = (Array.from(filterSet).length ? Array.from(filterSet) : cacheInterv.map(r=>r.id_intervenante));
+    const { data, error } = await sb.functions.invoke('isochrones', { body:{ ids, range:[seconds] }});
+    if (error) throw (error.message || 'Erreur isochrones');
+    L.geoJSON(data, { style:{ color:'#000', weight:1, fillOpacity:.08 } }).addTo(isoLayer);
+    if (!map.hasLayer(isoLayer)) { document.getElementById('lm_iso').checked = true; isoLayer.addTo(map); }
+  }catch(err){ showErr(err); }
 }
 document.getElementById('btnIso10').onclick = ()=>doIso(600);
 document.getElementById('btnIso15').onclick = ()=>doIso(900);
 
-/*** CRÉER/ÉDITER INTERVENANTE ***/
+/*** ====== CRUD Intervenante ====== ***/
 let ci_lat=null, ci_lon=null;
 document.getElementById('ci_geocode').onclick = async ()=>{
-  const addr = document.getElementById('ci_addr').value.trim();
-  if (!addr) return;
-  const hits = await geocodeBAN(addr);
-  if (!hits.length) return setInfo('ci_status','Adresse introuvable.');
-  ci_lat = hits[0].lat; ci_lon = hits[0].lon;
-  map.setView([ci_lat, ci_lon], 16);
-  setInfo('ci_status', `OK : ${hits[0].label} (${ci_lat.toFixed(5)}, ${ci_lon.toFixed(5)})`);
+  try{
+    const addr = document.getElementById('ci_addr').value.trim();
+    if (!addr) return;
+    const hits = await geocodeBAN(addr);
+    if (!hits.length) return setInfo('ci_status','Adresse introuvable.');
+    ci_lat = hits[0].lat; ci_lon = hits[0].lon;
+    map.setView([ci_lat, ci_lon], 16);
+    setInfo('ci_status', `OK : ${hits[0].label} (${ci_lat.toFixed(5)}, ${ci_lon.toFixed(5)})`);
+  }catch(err){ showErr(err); }
 };
-
 document.getElementById('ci_save').onclick = async ()=>{
   if (!canEdit()) return alert('Non autorisé.');
-  const id = document.getElementById('ci_id').value.trim();
-  const nom = document.getElementById('ci_nom').value.trim();
-  const addr = document.getElementById('ci_addr').value.trim();
-  const color = document.getElementById('ci_color').value;
-  if (!id) return alert("ID intervenante requis.");
-  if (ci_lat==null || ci_lon==null) {
-    const hits = await geocodeBAN(addr);
-    if (hits[0]) { ci_lat=hits[0].lat; ci_lon=hits[0].lon; }
-  }
-  const payload = { id_intervenante:id, nom, adresse_intervenante:addr, lat:ci_lat, lon:ci_lon, color };
-  const upd = await supabase.from('intervenantes_rw').update(payload).eq('id_intervenante', id).select();
-  if (upd.error) return alert(upd.error.message);
-  if (!upd.data?.length) {
-    const ins = await supabase.from('intervenantes_rw').insert([payload]).select();
-    if (ins.error) return alert(ins.error.message);
-  }
-  ci_lat=ci_lon=null;
-  document.getElementById('ci_status').textContent = 'Intervenante enregistrée.';
-  await loadData();
+  try{
+    const id = document.getElementById('ci_id').value.trim();
+    const nom = document.getElementById('ci_nom').value.trim();
+    const addr = document.getElementById('ci_addr').value.trim();
+    const color = document.getElementById('ci_color').value;
+    if (!id) return alert("ID intervenante requis.");
+    if (ci_lat==null || ci_lon==null) {
+      const hits = await geocodeBAN(addr);
+      if (hits[0]) { ci_lat=hits[0].lat; ci_lon=hits[0].lon; }
+    }
+    const payload = { id_intervenante:id, nom, adresse_intervenante:addr, lat:ci_lat, lon:ci_lon, color };
+    const upd = await sb.from('intervenantes_rw').update(payload).eq('id_intervenante', id).select();
+    if (upd.error) throw upd.error.message;
+    if (!upd.data?.length) {
+      const ins = await sb.from('intervenantes_rw').insert([payload]).select();
+      if (ins.error) throw ins.error.message;
+    }
+    ci_lat=ci_lon=null;
+    setInfo('ci_status','Intervenante enregistrée.');
+    await loadData();
+  }catch(err){ showErr(err); }
 };
-
 document.getElementById('ci_link').onclick = async ()=>{
   if (!canEdit()) return alert('Non autorisé.');
-  const id = document.getElementById('ci_id').value.trim();
-  const b  = document.getElementById('ci_benef_select').value;
-  if (!id || !b) return;
-  await supabase.from('lien_rw').delete().eq('id_beneficiaire', b).eq('id_intervenante', id);
-  const { error } = await supabase.from('lien_rw').insert([{ id_beneficiaire:b, id_intervenante:id, is_primary:true }]);
-  if (error) return alert(error.message);
-  document.getElementById('ci_status').textContent = 'Lien créé (primaire).';
-  await loadData();
+  try{
+    const id = document.getElementById('ci_id').value.trim();
+    const b  = document.getElementById('ci_benef_select').value;
+    if (!id || !b) return;
+    await sb.from('lien_rw').delete().eq('id_beneficiaire', b).eq('id_intervenante', id);
+    const { error } = await sb.from('lien_rw').insert([{ id_beneficiaire:b, id_intervenante:id, is_primary:true }]);
+    if (error) throw error.message;
+    setInfo('ci_status','Lien créé (primaire).');
+    await loadData();
+  }catch(err){ showErr(err); }
 };
-
 document.getElementById('cb_create_and_link').onclick = async ()=>{
   if (!canEdit()) return alert('Non autorisé.');
-  const idI = document.getElementById('ci_id').value.trim();
-  const idB = document.getElementById('cb_id_inline').value.trim();
-  const nomB= document.getElementById('cb_nom_inline').value.trim();
-  const addr= document.getElementById('cb_addr_inline').value.trim();
-  if (!idI || !idB) return alert('ID intervenante + ID bénéficiaire requis.');
-  const hits = await geocodeBAN(addr);
-  const lat = hits[0]?.lat ?? null, lon = hits[0]?.lon ?? null;
+  try{
+    const idI = document.getElementById('ci_id').value.trim();
+    const idB = document.getElementById('cb_id_inline').value.trim();
+    const nomB= document.getElementById('cb_nom_inline').value.trim();
+    const addr= document.getElementById('cb_addr_inline').value.trim();
+    if (!idI || !idB) return alert('ID intervenante + ID bénéficiaire requis.');
+    const hits = await geocodeBAN(addr);
+    const lat = hits[0]?.lat ?? null, lon = hits[0]?.lon ?? null;
 
-  const insB = await supabase.from('beneficiaires_rw').insert([{ id_beneficiaire:idB, nom:nomB, adresse_beneficiaire:addr, lat, lon }]).select();
-  if (insB.error) return alert(insB.error.message);
-  await supabase.from('lien_rw').insert([{ id_beneficiaire:idB, id_intervenante:idI, is_primary:true }]);
-  document.getElementById('ci_status').textContent = 'Bénéficiaire créé & lié.';
-  await loadData();
+    const insB = await sb.from('beneficiaires_rw').insert([{ id_beneficiaire:idB, nom:nomB, adresse_beneficiaire:addr, lat, lon }]).select();
+    if (insB.error) throw insB.error.message;
+    await sb.from('lien_rw').insert([{ id_beneficiaire:idB, id_intervenante:idI, is_primary:true }]);
+    setInfo('ci_status','Bénéficiaire créé & lié.');
+    await loadData();
+  }catch(err){ showErr(err); }
 };
 
-/*** CRÉER BÉNÉFICIAIRE ***/
+/*** ====== CRUD Bénéficiaire ====== ***/
 let cb_lat=null, cb_lon=null;
 document.getElementById('cb_geocode').onclick = async ()=>{
-  const addr = document.getElementById('cb_addr').value.trim();
-  const hits = await geocodeBAN(addr);
-  if (!hits[0]) return setInfo('cb_status','Adresse introuvable.');
-  cb_lat = hits[0].lat; cb_lon = hits[0].lon;
-  map.setView([cb_lat, cb_lon], 16);
-  setInfo('cb_status', `OK : ${hits[0].label} (${cb_lat.toFixed(5)}, ${cb_lon.toFixed(5)})`);
+  try{
+    const addr = document.getElementById('cb_addr').value.trim();
+    const hits = await geocodeBAN(addr);
+    if (!hits[0]) return setInfo('cb_status','Adresse introuvable.');
+    cb_lat = hits[0].lat; cb_lon = hits[0].lon;
+    map.setView([cb_lat, cb_lon], 16);
+    setInfo('cb_status', `OK : ${hits[0].label} (${cb_lat.toFixed(5)}, ${cb_lon.toFixed(5)})`);
+  }catch(err){ showErr(err); }
 };
 document.getElementById('cb_save').onclick = async ()=>{
   if (!canEdit()) return alert('Non autorisé.');
-  const idB = document.getElementById('cb_id').value.trim();
-  const nom = document.getElementById('cb_nom').value.trim();
-  const addr= document.getElementById('cb_addr').value.trim();
-  const idI = document.getElementById('cb_interv_select').value;
-  if (!idB) return alert('ID bénéficiaire requis.');
-  if (cb_lat==null || cb_lon==null){
-    const hits = await geocodeBAN(addr);
-    if (hits[0]) { cb_lat=hits[0].lat; cb_lon=hits[0].lon; }
-  }
-  const ins = await supabase.from('beneficiaires_rw').insert([{ id_beneficiaire:idB, nom, adresse_beneficiaire:addr, lat:cb_lat, lon:cb_lon }]).select();
-  if (ins.error) return alert(ins.error.message);
-  if (idI) await supabase.from('lien_rw').insert([{ id_beneficiaire:idB, id_intervenante:idI, is_primary:true }]);
-  cb_lat=cb_lon=null;
-  setInfo('cb_status','Bénéficiaire créé.');
-  await loadData();
+  try{
+    const idB = document.getElementById('cb_id').value.trim();
+    const nom = document.getElementById('cb_nom').value.trim();
+    const addr= document.getElementById('cb_addr').value.trim();
+    const idI = document.getElementById('cb_interv_select').value;
+    if (!idB) return alert('ID bénéficiaire requis.');
+    if (cb_lat==null || cb_lon==null){
+      const hits = await geocodeBAN(addr);
+      if (hits[0]) { cb_lat=hits[0].lat; cb_lon=hits[0].lon; }
+    }
+    const ins = await sb.from('beneficiaires_rw').insert([{ id_beneficiaire:idB, nom, adresse_beneficiaire:addr, lat:cb_lat, lon:cb_lon }]).select();
+    if (ins.error) throw ins.error.message;
+    if (idI) await sb.from('lien_rw').insert([{ id_beneficiaire:idB, id_intervenante:idI, is_primary:true }]);
+    cb_lat=cb_lon=null;
+    setInfo('cb_status','Bénéficiaire créé.');
+    await loadData();
+  }catch(err){ showErr(err); }
 };
 
-/*** ÉDITEUR DE LIENS n-n (droite) ***/
+/*** ====== Éditeur de liens n-n ====== ***/
 document.getElementById('ln_benef').onchange = ()=>{
   const bId = document.getElementById('ln_benef').value;
   const box = document.getElementById('ln_interv_list'); box.innerHTML='';
@@ -543,10 +565,56 @@ document.getElementById('ln_benef').onchange = ()=>{
     box.appendChild(label);
   });
 };
-
 document.getElementById('ln_save').onclick = async ()=>{
   if (!canEdit()) return alert('Non autorisé.');
-  const bId = document.getElementById('ln_benef').value;
-  if (!bId) return;
-  const checks = Array.from(document.querySelectorAll('#ln_interv_list input[type=checkbox]'));
-  const selecte
+  try{
+    const bId = document.getElementById('ln_benef').value;
+    if (!bId) return;
+    const checks = Array.from(document.querySelectorAll('#ln_interv_list input[type=checkbox]'));
+    const selected = checks.filter(c=>c.checked).map(c=>c.value);
+    const primary = (document.querySelector('#ln_interv_list input[name=ln_primary]:checked')||{}).value || null;
+
+    await sb.from('lien_rw').delete().eq('id_beneficiaire', bId);
+    if (selected.length){
+      const rows = selected.map((id,i)=>({ id_beneficiaire:bId, id_intervenante:id, is_primary: (primary? id===primary : i===0) }));
+      const { error } = await sb.from('lien_rw').insert(rows);
+      if (error) throw error.message;
+    }
+    await loadData();
+  }catch(err){ showErr(err); }
+};
+
+/*** ====== AUTH — Email + mot de passe ====== ***/
+document.getElementById('btnLogin').onclick = async ()=>{
+  try{
+    const email = (document.getElementById('email').value||'').trim().toLowerCase();
+    const password = document.getElementById('password').value;
+    if (!email || !password) return alert('Entrez email et mot de passe.');
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) throw error.message; // ex: "Email not confirmed"
+  }catch(err){ showErr(err); }
+};
+document.getElementById('btnLogout').onclick = async ()=>{
+  try{ await sb.auth.signOut(); }catch(err){ showErr(err); }
+};
+
+sb.auth.onAuthStateChange(async (_evt, s)=>{
+  session = s?.user ? s : null;
+  setAuthText();
+  if (canView()) await loadData(); else clearLayers();
+  refreshAuthUI();
+});
+
+/*** ====== BOOTSTRAP ====== ***/
+(async ()=>{
+  try{
+    const { data: { session: s } } = await sb.auth.getSession();
+    session = s?.user ? s : null;
+    setAuthText();
+    if (canView()) await loadData();
+    refreshAuthUI();
+  }catch(err){ showErr(err); }
+})();
+</script>
+</body>
+</html>
