@@ -1,1 +1,166 @@
+<!doctype html>
+<!-- 
+  Étape 1 — Gabarit + Carte seule (Leaflet)
+  ------------------------------------------------------------
+  - Cette page met en place la structure générale et une carte OSM centrée sur Bergues (59380).
+  - RIEN d’autre n’est fonctionnel pour l’instant (pas de zoom custom, pas de coordonnées, pas de recherche, pas d’auth Supabase).
+  - Chaque ligne est commentée pour faciliter les tests et les futures itérations.
+  - Important : nous désactivons le contrôle de zoom par défaut de Leaflet (il sera ajouté à l'étape 2, à la position demandée).
+  - Astuce : ouvre ce fichier directement via un petit serveur local (ex. `npx http-server` ou extension Live Server) pour éviter des soucis CORS sur certains navigateurs.
+-->
+<html lang="fr">
+<head>
+  <!-- Encodage en UTF-8 pour les accents français -->
+  <meta charset="utf-8" />
+  <!-- Viewport responsive pour mobile/tablette/desktop -->
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Titre de l’onglet navigateur -->
+  <title>Projet Carto Amélie — Étape 1 : Carte</title>
+
+  <!-- Feuille de style Leaflet depuis le CDN. 
+       Remarque : pas d’attributs SRI ici pour éviter des erreurs de hash si la version change côté CDN. 
+       On fixe une version stable (1.9.4) ; on pourra l’actualiser plus tard si besoin. -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <!-- Styles minimaux pour structurer la page et occuper tout l’écran -->
+  <style>
+    /* Réinitialisation minimale pour éviter des marges par défaut du body */
+    html, body { height: 100%; margin: 0; padding: 0; }
+
+    /* Conteneur principal : on occupe tout l’écran avec la carte */
+    #app { position: relative; width: 100%; height: 100%; }
+
+    /* La carte occupe 100% de l’espace disponible */
+    #map { position: absolute; inset: 0; }
+
+    /* PLACEHOLDERS (non utilisés à l'étape 1) ----------------------------------
+       Ces éléments vides servent uniquement à poser le layout conforme au cahier des charges.
+       Ils seront activés et remplis aux étapes suivantes.
+    */
+    .panel-login { 
+      position: absolute; top: 12px; left: 12px; z-index: 1000; 
+      max-width: 320px; padding: 10px; border-radius: 8px; 
+      background: rgba(255,255,255,0.9); box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      /* À l'étape 4/5 on injectera le formulaire de connexion ici */
+      display: none; /* Masqué en étape 1 */
+    }
+
+    .panel-search { 
+      position: absolute; top: 12px; right: 12px; z-index: 1000; 
+      max-width: 420px; padding: 10px; border-radius: 8px; 
+      background: rgba(255,255,255,0.9); box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      /* À l'étape 4 on ajoutera la recherche d’adresse (BAN / Géoplateforme) */
+      display: none; /* Masqué en étape 1 */
+    }
+
+    .panel-coords { 
+      position: absolute; right: 12px; bottom: 12px; z-index: 1000; 
+      padding: 8px 10px; border-radius: 6px; 
+      background: rgba(255,255,255,0.9); box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      font: 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      /* À l'étape 3 on affichera ici les coordonnées sous la souris */
+      display: none; /* Masqué en étape 1 */
+    }
+
+    /* Emplacement futur de la barre de zoom custom (centrée à droite) ---------
+       On NE L’AJOUTE PAS à l’étape 1 (exigence du pas-à-pas). */
+    .zoom-right-center { 
+      position: absolute; top: 50%; right: 12px; transform: translateY(-50%);
+      z-index: 1000; display: none; /* activée à l’étape 2 */
+    }
+  </style>
+</head>
+<body>
+  <!-- Conteneur global de l’application -->
+  <div id="app">
+    <!-- Carte Leaflet -->
+    <div id="map" aria-label="Carte interactive centrée sur Bergues (59380)"></div>
+
+    <!-- PLACEHOLDERS d’interface (vides & masqués à cette étape) -------------->
+    <div class="panel-login" id="panel-login">
+      <!-- Étape 5 : formulaire d’identification (email, mot de passe, bouton connexion) -->
+      <!-- Rappel: si erreur d'identifiants, afficher texte rouge “Identifiants inconnus” -->
+      <!-- Exigence: aucune donnée (intervenants, bénéficiaires, secteurs) ne sera visible sans connexion -->
+    </div>
+
+    <div class="panel-search" id="panel-search">
+      <!-- Étape 4 : barre de recherche d’adresse (API Géoplateforme / ex-BAN) -->
+    </div>
+
+    <div class="panel-coords" id="panel-coords">
+      <!-- Étape 3 : coordonnées sous la souris -->
+    </div>
+
+    <div class="zoom-right-center" id="zoom-custom">
+      <!-- Étape 2 : boutons + / - repositionnés à droite, centrés verticalement -->
+    </div>
+  </div>
+
+  <!-- Script Leaflet depuis le CDN (version 1.9.4) -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    // =========================
+    // Initialisation de la carte
+    // =========================
+
+    // 1) Création de l’instance Leaflet
+    //    - zoomControl: false => on MASQUE la barre de zoom par défaut pour respecter le pas-à-pas
+    //      (on l’ajoutera à l’étape 2 avec la bonne position à droite, centrée verticalement)
+    const map = L.map('map', {
+      zoomControl: false,   // IMPORTANT pour l’étape 1
+      preferCanvas: true    // Perf : utile plus tard quand on ajoutera beaucoup d’objets
+    });
+
+    // 2) Centre initial sur Bergues (59380) — coordonnées décimales WGS84
+    //    Source de contrôle : 50.969 N, 2.436 E.
+    //    NB : on choisit un zoom 13 pour voir la ville et ses abords.
+    map.setView([50.969, 2.436], 13);
+
+    // 3) Fond de plan OpenStreetMap (tuile standard)
+    //    - Attribution OBLIGATOIRE pour respecter la licence OSM.
+    //    - Subdomains implicites (a,b,c) gérés par le pattern {s}.
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, // niveau max recommandé pour le serveur OSM standard
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    });
+
+    // 4) Ajout du fond de plan à la carte
+    osm.addTo(map);
+
+    // 5) Ajustement automatique en cas de redimensionnement de fenêtre
+    window.addEventListener('resize', () => {
+      // invalidateSize() demande à Leaflet de recalculer la taille de la carte
+      map.invalidateSize();
+    });
+
+    // 6) Journalisation (debug) pour confirmer que tout est bien chargé
+    console.info('[Étape 1] Carte initialisée (Leaflet 1.9.4) — centre: Bergues (50.969, 2.436), zoom 13');
+
+    // ------------------------------------------------------------------------
+    // Lignes PRÉPARÉES pour les prochaines étapes (NE PAS ACTIVER MAINTENANT)
+    // ------------------------------------------------------------------------
+
+    // // Étape 2 — Contrôle de zoom personnalisé (à droite, centré verticalement)
+    // // Raison du commentaire : ne pas griller l’étape 2 ; on y ajoutera le code et le style.
+    // // const zoomControl = L.control.zoom({ position: 'topright' }); // ne correspond pas à l’exacte position souhaitée
+    // // zoomControl.addTo(map);
+
+    // // Étape 3 — Coordonnées sous la souris
+    // // Raison du commentaire : fonctionnalité prévue à l’étape 3 uniquement.
+    // // map.on('mousemove', (e) => {
+    // //   document.getElementById('panel-coords').style.display = 'block';
+    // //   document.getElementById('panel-coords').textContent = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
+    // // });
+
+    // // Étape 4 — Recherche d’adresse (API Géoplateforme / ex-BAN)
+    // // Raison du commentaire : sera ajouté avec un champ d’input, debounce et appel fetch.
+
+    // // Étape 5 — Auth Supabase (connexion/déconnexion, affichage conditionnel des couches)
+    // // Raison du commentaire : ajout du SDK supabase-js, gestion RLS et liste blanche.
+
+  </script>
+</body>
+</html>
+
 
