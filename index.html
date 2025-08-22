@@ -64,10 +64,28 @@
 
     /* Emplacement futur de la barre de zoom custom (centrée à droite) ---------
        On NE L’AJOUTE PAS à l’étape 1 (exigence du pas-à-pas). */
+    /* Emplacement futur de la barre de zoom custom (centrée à droite) ---------
+       Étape 2 : on ACTIVE et on stylise deux boutons + / - accessibles.
+    */
     .zoom-right-center { 
       position: absolute; top: 50%; right: 12px; transform: translateY(-50%);
-      z-index: 1000; display: none; /* activée à l’étape 2 */
+      z-index: 1000; display: block; /* activée à l’étape 2 */
+      display: flex; flex-direction: column; gap: 8px;
     }
+    .zoom-right-center .btn-zoom {
+      appearance: none; -webkit-appearance: none; -moz-appearance: none;
+      border: 1px solid rgba(0,0,0,0.2);
+      background: rgba(255,255,255,0.95);
+      border-radius: 8px;
+      width: 40px; height: 40px;
+      font: 700 22px/40px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      text-align: center; cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+      user-select: none;
+    }
+    .zoom-right-center .btn-zoom:disabled { opacity: 0.5; cursor: not-allowed; }
+    .zoom-right-center .btn-zoom:focus { outline: 2px solid #4da3ff; outline-offset: 2px; }
+    .zoom-right-center .btn-zoom:hover { filter: brightness(0.97); }
   </style>
 </head>
 <body>
@@ -93,6 +111,9 @@
 
     <div class="zoom-right-center" id="zoom-custom">
       <!-- Étape 2 : boutons + / - repositionnés à droite, centrés verticalement -->
+      <!-- Accessibilité : boutons <button> avec aria-label et gestion clavier -->
+      <button id="btn-zoom-in" class="btn-zoom" type="button" aria-label="Zoomer">+</button>
+      <button id="btn-zoom-out" class="btn-zoom" type="button" aria-label="Dézoomer">−</button>
     </div>
   </div>
 
@@ -138,9 +159,56 @@
     console.info('[Étape 1] Carte initialisée (Leaflet 1.9.4) — centre: Bergues (50.969, 2.436), zoom 13');
 
     // ------------------------------------------------------------------------
+    // Étape 2 — Contrôle de zoom personnalisé (actif)
+    // ------------------------------------------------------------------------
+    (function initCustomZoom(){
+      // Raison : nous voulons les boutons +/− à DROITE et CENTRÉS verticalement,
+      // alors que le contrôle Leaflet natif ne propose pas cette position.
+      const btnIn  = document.getElementById('btn-zoom-in');
+      const btnOut = document.getElementById('btn-zoom-out');
+
+      if (!btnIn || !btnOut) {
+        console.warn('[Étape 2] Boutons de zoom non trouvés dans le DOM.');
+        return; // Évite une erreur si l’HTML a été modifié
+      }
+
+      // Fonctions utilitaires pour mettre à jour l’état (désactivé si limites atteintes)
+      const updateDisabled = () => {
+        const z = map.getZoom();
+        btnIn.disabled  = (z >= map.getMaxZoom());
+        btnOut.disabled = (z <= map.getMinZoom());
+      };
+
+      // Clics souris
+      btnIn.addEventListener('click',  () => map.zoomIn());
+      btnOut.addEventListener('click', () => map.zoomOut());
+
+      // Clavier (Espace/Entrée)
+      const keyHandler = (ev, fn) => {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); fn(); }
+      };
+      btnIn.addEventListener('keydown',  (e)=> keyHandler(e, ()=> map.zoomIn()));
+      btnOut.addEventListener('keydown', (e)=> keyHandler(e, ()=> map.zoomOut()));
+
+      // Mettre à jour après chaque zoom
+      map.on('zoomend', updateDisabled);
+      // Init immédiate
+      updateDisabled();
+      console.info('[Étape 2] Contrôle de zoom personnalisé initialisé (droite, centré).');
+    })();
+
+    // ------------------------------------------------------------------------
+    // Étape 2 (optionnel) — Échelle cartographique (barre d’échelle)
+    // ------------------------------------------------------------------------
+    // Si par "échelle de zoom" tu entendais la BARRE D’ÉCHELLE (km/m) :
+    // Dé-commente les deux lignes suivantes pour l’activer (position par défaut bas-gauche)
+    // NOTE : si cela crée un conflit visuel avec le design, on la repositionnera plus tard.
+    // const scale = L.control.scale({ metric: true, imperial: false });
+    // scale.addTo(map);
+
+    // ------------------------------------------------------------------------
     // Lignes PRÉPARÉES pour les prochaines étapes (NE PAS ACTIVER MAINTENANT)
     // ------------------------------------------------------------------------
-
     // // Étape 2 — Contrôle de zoom personnalisé (à droite, centré verticalement)
     // // Raison du commentaire : ne pas griller l’étape 2 ; on y ajoutera le code et le style.
     // // const zoomControl = L.control.zoom({ position: 'topright' }); // ne correspond pas à l’exacte position souhaitée
@@ -162,5 +230,3 @@
   </script>
 </body>
 </html>
-
-
